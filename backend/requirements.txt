@@ -1,0 +1,36 @@
+# Interlude backend
+# Unpinned on purpose: uv.lock is what makes builds reproducible.
+
+# --- API ---
+fastapi
+uvicorn[standard]
+python-multipart          # video uploads
+sse-starlette             # progress stream for the live timeline UI
+pydantic-settings         # env config
+python-dotenv
+
+# --- B2 storage (S3-compatible) ---
+boto3                     # presigned URLs, multipart, object lock, versioning
+
+# --- HTTP ---
+httpx
+
+# --- Generation ---
+# Genblaze: VERIFY THE PyPI PACKAGE NAME before uncommenting.
+# The GitHub URL guessed earlier 404'd, so this name is unconfirmed and a
+# wrong entry makes the whole install fail.
+# genblaze
+
+# Direct provider SDKs. Only add the ones Genblaze does NOT cover, and say so
+# honestly in the write-up if you had to bypass it for a role.
+# openai
+# elevenlabs
+
+# --- Media ---
+# ffmpeg and ffprobe are called as subprocesses, not via a Python wrapper.
+# Nothing to install here, but they must exist on PATH locally and in the
+# deploy image. Check with: ffprobe -version
+
+# --- Dev ---
+# ruff
+# pytest
