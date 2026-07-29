@@ -1,32 +1,41 @@
 import { serve } from "bun";
 import index from "./index.html";
 
+// bun only substitutes process.env.BUN_PUBLIC_* into the client bundle when the
+// var has a value. unset, the raw reference ships to the browser and blows up
+// with "process is not defined", so refuse to start instead.
+if (!process.env.BUN_PUBLIC_API_URL) {
+  throw new Error(
+    "BUN_PUBLIC_API_URL is not set. copy .env.example to .env and fill it in.",
+  );
+}
+
 const server = serve({
   routes: {
     // Serve index.html for all unmatched routes.
     "/*": index,
 
-    "/api/hello": {
-      async GET(req) {
-        return Response.json({
-          message: "Hello, world!",
-          method: "GET",
-        });
-      },
-      async PUT(req) {
-        return Response.json({
-          message: "Hello, world!",
-          method: "PUT",
-        });
-      },
-    },
+    // "/api/hello": {
+    //   async GET(req) {
+    //     return Response.json({
+    //       message: "Hello, world!",
+    //       method: "GET",
+    //     });
+    //   },
+    //   async PUT(req) {
+    //     return Response.json({
+    //       message: "Hello, world!",
+    //       method: "PUT",
+    //     });
+    //   },
+    // },
 
-    "/api/hello/:name": async req => {
-      const name = req.params.name;
-      return Response.json({
-        message: `Hello, ${name}!`,
-      });
-    },
+    // "/api/hello/:name": async req => {
+    //   const name = req.params.name;
+    //   return Response.json({
+    //     message: `Hello, ${name}!`,
+    //   });
+    // },
   },
 
   development: process.env.NODE_ENV !== "production" && {

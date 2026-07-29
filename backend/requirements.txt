@@ -16,15 +16,19 @@ boto3                     # presigned URLs, multipart, object lock, versioning
 httpx
 
 # --- Generation ---
-# Genblaze: VERIFY THE PyPI PACKAGE NAME before uncommenting.
-# The GitHub URL guessed earlier 404'd, so this name is unconfirmed and a
-# wrong entry makes the whole install fail.
-# genblaze
+# genblaze 0.4.4 is an umbrella: pulls genblaze-core + genblaze-s3.
+# Repo: github.com/backblaze-labs/genblaze
+genblaze
 
-# Direct provider SDKs. Only add the ones Genblaze does NOT cover, and say so
-# honestly in the write-up if you had to bypass it for a role.
-# openai
-# elevenlabs
+# Provider adapters. Writer and checker must be DIFFERENT providers,
+# so both openai and google are here on purpose.
+genblaze-openai
+genblaze-google
+genblaze-elevenlabs
+
+# Transcription: no STT adapter is listed in the Genblaze provider set.
+# Verify before assuming. If there's no STT modality, call Whisper directly
+# and say so plainly in the write-up rather than pretending otherwise.
 
 # --- Media ---
 # ffmpeg and ffprobe are called as subprocesses, not via a Python wrapper.
