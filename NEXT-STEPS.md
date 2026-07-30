@@ -1,283 +1,157 @@
-# What's next, in plain language
+# How it works, in plain language
 
-A companion to [ARCHITECTURE.md](ARCHITECTURE.md). That file describes the finished
-system. This one explains where we are right now, what a "worker" is, and what to
-build next.
+A companion to [ARCHITECTURE.md](ARCHITECTURE.md). That file is the spec. This
+one explains how the thing actually behaves, and what is left.
 
----
-
-## Where we are today
-
-The upload half is done and working:
-
-1. Browser asks the API for a presigned URL
-2. Browser sends the video **straight to Backblaze**, not through our server
-3. Browser tells the API "it's uploaded", and the API checks it really landed
-
-That's it. Right now, once a video is uploaded, **nothing happens to it.** It just
-sits in the bucket. Everything in ARCHITECTURE.md (transcribing, finding silences,
-writing descriptions) has not been built yet.
-
-The next piece is the thing that picks up an uploaded video and starts working on
-it. That thing is called a worker.
+Last updated 30 Jul 2026, after running a clip end to end.
 
 ---
 
-## What is a worker?
+## The short version
 
-### The problem
+Upload a video. A few minutes later you get an audio track where a narrator
+describes what happens in the silences, plus a tamper-evident record of exactly
+which model produced each line.
 
-When your browser calls an API, it waits for an answer. If the answer doesn't come
-back in a second or two, the browser gives up and shows an error.
-
-Our pipeline is not fast. For one video it has to:
-
-- transcribe the speech
-- find the silent gaps
-- pull out frames with ffmpeg
-- ask a vision model what's happening in each gap
-- write narration, convert it to speech, measure it, retry if it doesn't fit
-- mix the audio together
-
-That takes **minutes**, sometimes many. There is no way to do that while the
-browser waits.
-
-### The solution
-
-Split it into two parts.
-
-**Part 1, the API.** Someone uploads a video. The API writes down "job number 47
-needs processing" and immediately replies "got it". Takes 50 milliseconds. Browser
-is happy.
-
-**Part 2, the worker.** A separate loop running in the background that picks up job
-47 and actually does the slow work. Nobody is waiting on it. It can take twenty
-minutes if it needs to.
-
-A worker is just a loop that runs forever:
-
-```
-loop forever:
-    is there a job waiting?
-    yes -> do the whole pipeline for it
-    no  -> sleep until one arrives
-```
-
-That's genuinely all it is. Nothing clever.
-
-### The restaurant version
-
-The waiter takes your order and immediately goes back to the floor. He does not
-stand at your table cooking. The kitchen cooks, in the background, at its own pace.
-
-The API is the waiter. The worker is the kitchen. The job is the order ticket.
+Everything below already works.
 
 ---
 
-## How you build a worker in Python
+## What happens when you upload
 
-There are a few standard options. Here they are, worst fit to best fit for us.
+**1. The browser uploads straight to Backblaze.** Your server never touches the
+video. It hands out a short-lived signed URL and steps out of the way, so there
+are no request timeouts and no gigabytes buffered in memory.
 
-### Celery
+**2. The API queues a job and replies immediately.** About 50 milliseconds. The
+real work happens behind the response.
 
-The famous one. Very powerful. It needs a separate message broker program
-(Redis or RabbitMQ) running alongside your app, plus its own config and its own
-process to launch.
-
-**Not for us.** It's built for running hundreds of jobs across many machines. We
-run one job at a time on one machine. It would be a lot of setup for no benefit.
-
-### RQ or arq
-
-Lighter versions of the same idea. Still need Redis running.
-
-**Not for us**, same reason. Another program to install and keep alive during a
-hackathon demo.
-
-### FastAPI's BackgroundTasks
-
-Built into FastAPI, one line of code:
-
-```python
-background_tasks.add_task(process_video, key)
-```
-
-Tempting, but it's designed for quick things like sending a confirmation email.
-There's no way to see progress, no way to cancel, and if the server restarts the
-work vanishes with no record it ever existed.
-
-**Not for us.** We need to show progress live, and we need to survive a restart.
-
-### A background asyncio task (this is the one)
-
-Python can run a loop in the background inside the same program as your API. No
-extra software, no second process, no broker.
-
-```python
-# a list of jobs waiting their turn
-queue = asyncio.Queue()
-
-# the worker loop, started once when the app boots
-async def worker_loop():
-    while True:
-        job_id = await queue.get()     # waits here until a job arrives
-        await run_pipeline(job_id)     # the slow part
-```
-
-And the upload endpoint just adds to the queue and returns:
-
-```python
-await queue.put(job_id)
-return {"jobId": job_id, "status": "queued"}
-```
-
-**This is what ARCHITECTURE.md already chose:** *"One worker, one job at a time.
-No queue."* It's the right call, and the next section explains why it's not a
-shortcut.
+**3. A background worker picks it up.** One job at a time, an `asyncio` queue, no
+Redis and no Celery. It is a loop that takes a job off a list and runs seven
+stages in order.
 
 ---
 
-## The clever bit: where progress is stored
+## The seven stages
 
-Normally a worker needs a database to remember what it has finished. If the
-server crashes halfway through, the database tells it where to resume.
+| Stage | What it does | Who does it |
+|---|---|---|
+| Transcribe | words with exact timestamps | Groq Whisper, hosted |
+| Find gaps | silences longer than 1.5s | plain arithmetic, no model |
+| Analyse | for each gap, fill or leave silent, and why | Gemini, watching the video |
+| Describe | write it, say it, measure it, retry until it fits | Gemini + ElevenLabs |
+| Coverage | could a listener actually reconstruct the scene? | Groq Llama |
+| Mux | mix narration into the original soundtrack | ffmpeg |
+| Publish | write the locked provenance record | Genblaze |
 
-We don't have a database, and we don't need one, because **the files in Backblaze
-already tell us.**
+**There is no keyframe stage.** The whole video goes to Gemini, so the model sees
+motion instead of one frozen frame per gap.
 
-The worker asks Backblaze a series of yes/no questions:
+---
+
+## The two loops, which are the actual product
+
+**Loop 1, fit.** Narration has to physically fit the silence. If the gap is 4.6
+seconds and the render comes out at 5.8, that is a failure, so it rewrites
+shorter and tries again. No model judges this; it is arithmetic on the rendered
+audio. If four rewrites do not fit, it speeds up delivery slightly, and if that
+still fails it leaves the gap silent rather than talking over the dialogue.
+
+Every attempt is kept, so the UI can show the failures struck through with their
+measured durations. That is the thing worth watching in a demo.
+
+**Loop 2, coverage.** Asks whether a blind listener would actually know what
+happened, by replaying the audio-only experience to a *different* model and
+checking which visual facts survive. Measured twice, dialogue alone versus
+dialogue plus narration, because the lift is the interesting number.
+
+The checker is Groq, the writer is Gemini. Grading your own homework proves
+nothing.
+
+---
+
+## Why it survives a crash
+
+There is no database. The worker works out where it got to by asking Backblaze
+which files exist:
 
 | Question | If yes, that stage is done |
 |---|---|
-| Does `transcript.json` exist? | transcribing is finished |
-| Does `gaps.json` exist? | gap detection is finished |
-| Does the `frames/` folder exist? | keyframes are finished |
-| Does `decisions.json` exist? | analysis is finished |
-| Does `described-audio.m4a` exist? | mixing is finished |
+| `transcript.json`? | transcribing finished |
+| `gaps.json`? | gap detection finished |
+| `decisions.json`? | analysis finished |
+| `descriptions.json`? | the fit loop finished |
+| `coverage.json`? | the coverage check finished |
+| `described-audio.m4a`? | mixing finished |
+| `manifest.json`? | published |
 
-So when the worker starts up, it walks that list and picks up at the first missing
-piece. Everything already done is skipped, and none of it gets paid for twice.
-
-This is why you can **kill the server mid-job, restart it, and it carries on.**
-ARCHITECTURE.md lists that as a demo requirement, restarting the worker on camera.
-It works because progress was never in the worker's memory, it's in the files.
-
-To avoid asking Backblaze a dozen questions every time, we also write a small
-summary file, `jobs/{jobId}/state.json`, after each stage. That's a shortcut, not
-a second source of truth. If it's missing or looks wrong, fall back to checking
-the files directly.
+Kill the server mid-job, restart it, and it resumes at the first missing piece.
+Verified: a re-run logs "already done, skipping" for each finished stage and
+pays for nothing twice.
 
 ---
 
-## Two things that will bite
+## What Genblaze does here
 
-**1. ffmpeg will freeze everything if you call it wrong.**
+Genblaze is the sponsor SDK. It does two jobs.
 
-Normal Python waits for a program to finish, and while waiting, nothing else in
-your app can run. So an ffmpeg call would freeze the live progress updates going
-to the browser, exactly when a judge is watching them.
+**It orchestrates the narration step.** The text-to-speech call runs as a
+`Pipeline` step with `ElevenLabsTTSProvider`, and an `ObjectStorageSink` writes
+every render to Backblaze under a key derived from the content's hash.
 
-Use `asyncio.create_subprocess_exec` instead of `subprocess.run`, so the rest of
-the app keeps running while ffmpeg does its thing.
+**It writes the provenance record.** One `Manifest` per run listing every model
+call, with a hash covering the whole thing, written into the Object Lock bucket
+where it cannot be edited.
 
-**2. Only run one server process.**
-
-The job queue lives in the app's memory. If you start the server with
-`uvicorn --workers 4`, you get four separate apps each with their own private
-queue, and jobs vanish into whichever one happened to answer. Keep it to one
-process. Your current setup already does this.
+**The other four calls go direct, on purpose.** There is no Groq adapter, and the
+Google adapter only generates images and video, not text. Those are stated
+reasons, not apologies.
 
 ---
 
-## One thing blocks all of it
+## Honest weak spots
 
-Right now uploaded videos are saved with names like:
+**The cache hit rate reads 0%.** Content-addressable storage does dedupe
+identical renders, proven directly. It never fires between runs because the
+vision stage words the same facts differently each time, so the text differs, so
+the render differs. Fixing it needs deterministic upstream generation.
 
-```
-uploads/2026/07/28/8409a9da3c134834a43f970dcd77a09a.mp4
-```
+**Estimated cost reads $0.00.** The ElevenLabs spec in `ModelRegistry` carries no
+pricing.
 
-But ARCHITECTURE.md expects:
+**Object Lock is bypassable by our own key.** It is GOVERNANCE mode and the app
+key holds `bypassGovernance`. COMPLIANCE mode would close that.
 
-```
-projects/{projectId}/source/{videoId}.mp4
-```
-
-This matters more than it looks. The worker finds its progress by looking for
-files next to the source, like `projects/{projectId}/analysis/{videoId}/transcript.json`.
-With the current naming there's no project folder to look inside, so the whole
-resume mechanism has nowhere to live.
-
-It also unlocks two things ARCHITECTURE.md asks for: application keys restricted
-to a single project, and lifecycle rules that delete `attempts/` without touching
-`final/`.
-
-Change this **before** building the worker. Nothing important has been uploaded
-yet, so it costs nothing now and gets expensive later.
-
-### The one decision needed
-
-Where does `projectId` come from?
-
-- **Option A:** the backend makes one up for every upload. Simplest. Every video
-  is its own project. Good enough for the hackathon.
-- **Option B:** the frontend sends one, so several videos can share a project.
-  Needed later if you want a "project" screen listing multiple videos.
-
-Option A is recommended unless you already know the demo shows grouped videos.
+**The test clip is a poor showcase.** One describable gap in 115 seconds, and the
+description is about an end title card. It exercises everything but demonstrates
+little.
 
 ---
 
-## The plan, in order
+## What is left
 
-**1. Apply the bucket CORS rules**
+1. Seed the gallery with finished examples and one-click samples. A judge must
+   never land on an empty screen.
+2. The OpenCourseWare run, which produces numbers worth publishing.
+3. Deploy to Railway, with ffmpeg in the image. Do one throwaway deploy early.
+4. Lifecycle rules on the media bucket, and scoped keys per bucket.
+5. Demo video, and the write-up against criteria 3 and 4.
+6. Record a fallback run, and rehearse the crash-resume take.
 
-Until this is done the browser cannot upload at all, so nothing downstream can be
-tested. The script is written and ready:
+---
+
+## Running it
 
 ```bash
-cd backend && ./.venv/Scripts/python.exe scripts/set_b2_cors.py
+cd backend && ./.venv/Scripts/python.exe main.py
+cd frontend && bun dev
 ```
 
-**2. Change the key layout to `projects/{projectId}/source/{videoId}.mp4`**
+Both `.env` files must be filled in from their `.env.example`. Two things bite
+repeatedly:
 
-Small change to `create_presigned_url`. Needs the decision above.
-
-**3. Build the worker skeleton with a fake pipeline**
-
-Just the queue, the background loop, and `jobs/{jobId}/state.json`. The "pipeline"
-at this stage is a few stages that sleep for five seconds each and write a file.
-
-Doing it fake first is deliberate. You can prove restart-and-resume works in
-seconds instead of waiting minutes for real transcription, and you'll be debugging
-one new thing at a time instead of three.
-
-**4. Add the live progress stream (SSE) and the timeline UI**
-
-`sse-starlette` is already installed. The browser subscribes to a job and watches
-the stages tick over. Still driven by the fake pipeline.
-
-At this point both demo requirements from ARCHITECTURE.md are provably working:
-the visible loop, and resume after restart.
-
-**5. Replace the fake stages with real ones**
-
-Transcribe, then gap detection, then keyframes. One at a time, with the
-surrounding machinery already known to work.
-
-**6. Then the two loops**
-
-Fit loop first, then the coverage loop.
-
----
-
-## Summary
-
-- A worker is a background loop that does slow work after the API has replied
-- Ours will be a plain asyncio task inside the existing FastAPI app, no Redis,
-  no Celery, no extra process
-- It remembers progress by checking which files exist in Backblaze, not a database
-- Which is what makes crash-resume work, and that's a demo requirement
-- Fix the key naming first, it blocks everything else
-- Build it with fake stages first, prove resume and live progress, then plug in
-  the real pipeline
+- `ELEVENLABS_VOICE_ID` must be a **premade** voice. Voice-library voices return
+  402 on the free tier even though the id looks valid.
+- Use `localhost`, not `127.0.0.1`, in `BUN_PUBLIC_API_URL`. They are different
+  origins for CORS, and a killed server can leave an orphaned IPv4 listener that
+  answers with stale code until you reboot.

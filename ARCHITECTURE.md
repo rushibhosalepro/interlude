@@ -25,10 +25,15 @@ It does not hand you files. It gives you a URL your existing player points at.
 | Frontend | React + Bun + shadcn |
 | Backend | FastAPI, Python 3.13, uv |
 | Storage | Backblaze B2 (S3-compatible, via boto3 and genblaze-s3) |
-| Generation | Genblaze 0.4.4 |
+| Generation | Genblaze 0.4.5 with genblaze-core 0.3.8, genblaze-elevenlabs |
+| Speech to text | Groq, `whisper-large-v3-turbo`, hosted |
 | Media | ffmpeg / ffprobe as subprocesses |
 | Index | Postgres, deferred until listing requires it |
 | Deploy | Railway (container, needs ffmpeg in the image) |
+
+**Version note.** The adapters declare `genblaze-core>=0.3.4` but import
+`local_file_url`, which only exists from 0.3.7. On 0.3.6 they satisfy the
+constraint and fail to import. Pin core at 0.3.8 or later.
 
 ---
 
@@ -59,27 +64,39 @@ projects/{projectId}/analysis/{videoId}/transcript.json
 projects/{projectId}/analysis/{videoId}/gaps.json
 projects/{projectId}/analysis/{videoId}/decisions.json
 projects/{projectId}/analysis/{videoId}/coverage.json
-projects/{projectId}/analysis/{videoId}/frames/{gapId}-{n}.jpg
 projects/{projectId}/attempts/{gapId}/{n}/text.json
-projects/{projectId}/attempts/{gapId}/{n}/audio.mp3
+projects/{projectId}/attempts/{gapId}/{n}/audio.wav
 projects/{projectId}/final/{videoId}/descriptions.vtt
 projects/{projectId}/final/{videoId}/described-audio.m4a
+projects/{projectId}/final/{videoId}/manifest.json
 jobs/{jobId}/state.json
+
+genblaze/assets/{aa}/{bb}/{sha256}.pcm     written by ObjectStorageSink
+genblaze/manifests/{runId}.json            per TTS pipeline run
 ```
 
 Lifecycle: expire `attempts/` after 30 days, keep `final/` and `analysis/` indefinitely.
 
-**Note:** Genblaze's `ObjectStorageSink` writes generated assets using its own key strategy. The layout above applies to artifacts Genblaze does not produce: the uploaded source, ffmpeg keyframes, and the muxed output. Let the SDK own its own keys rather than fighting it.
+**Note:** `ObjectStorageSink` owns the `genblaze/` prefix and its own key layout. Everything else is hand-managed: the uploaded source, the analysis artifacts, the per-attempt renders the UI reads, and the muxed output.
 
 ### `interlude-compliance`
 
 Private, SSE-B2 on, **Object Lock enabled**. One small file per completed video.
 
 ```
-compliance/{projectId}/{videoId}/{iso8601}.json
+compliance/manifests/{runId}.json
 ```
 
-This holds the Genblaze `Manifest`, not hand-rolled JSON. See below.
+Written by `ObjectStorageSink` with `manifest_lock=ObjectLockConfig(...)`, so
+Object Lock is applied on write. The key layout is the SDK's, not ours.
+
+A **second sink** is needed for this: `ObjectStorageSink` has a single backend,
+and the narration sink points at the media bucket. Output assets are recorded as
+step metadata rather than `Asset` objects, because `write_run` transfers every
+referenced asset into its own backend and refuses to write the manifest if that
+fails, which would have copied the audio into the compliance bucket and locked
+it. The sha256 still lands in the manifest and is still covered by the canonical
+hash, so tamper evidence is unchanged.
 
 ### B2 features and why each is present
 
@@ -99,7 +116,7 @@ This holds the Genblaze `Manifest`, not hand-rolled JSON. See below.
 
 ## Genblaze usage
 
-`pip install genblaze` (0.4.4) pulls `genblaze-core` and `genblaze-s3`. Repo: `github.com/backblaze-labs/genblaze`.
+`uv add genblaze genblaze-elevenlabs` pulls `genblaze-core` and `genblaze-s3`. Repo: `github.com/backblaze-labs/genblaze`.
 
 ### Storage binding
 
@@ -113,7 +130,16 @@ storage = ObjectStorageSink(
 )
 ```
 
-`CONTENT_ADDRESSABLE` deduplicates by hash. Identical description text produces an identical TTS render which lands on the same key, so re-runs of an edited video pay nothing for unchanged scenes. That is the cache story, and it is a documented SDK feature rather than something invented.
+`CONTENT_ADDRESSABLE` deduplicates by hash. Identical description text produces
+an identical TTS render which lands on the same key.
+
+**Measured honestly: the observed hit rate is 0% across cold runs.** The dedupe
+works, verified directly by rendering the same string twice and getting a hit.
+It does not fire between runs because the upstream text differs every time: the
+vision stage words the same facts differently on each pass, so the writer's
+input differs, so the render differs. Making this pay off needs deterministic
+upstream generation, which Gemini does not reliably provide even at low
+temperature.
 
 ### Provenance
 
@@ -125,23 +151,37 @@ Every run produces a `Manifest`: a canonical, hash-verified document capturing p
 
 ### Lineage
 
-`Run` carries `run_id`, `tenant_id` and `parent_run_id`. The fit loop's retry chain maps directly onto `parent_run_id`: attempt 2 points at attempt 1. The loop's history is first-class SDK data, not bolted-on metadata.
+`Run` carries `run_id`, `tenant_id` and `parent_run_id`. Not yet used: attempts
+are recorded under `attempts/{gapId}/{n}/` and as steps in the run, but the
+retry chain is not expressed as `parent_run_id` links.
 
 ### Provider roles
 
-Five roles, deliberately not all one vendor.
+Five roles, deliberately not all one vendor. What actually runs, verified:
 
-| Role | Package |
-|---|---|
-| Speech-to-text | **no adapter listed.** Verify. If absent, call Whisper directly and say so in the write-up. |
-| Vision (facts + fill/skip) | `genblaze-openai` or `genblaze-google` |
-| Description writing | `genblaze-openai` |
-| Coverage checker | `genblaze-google` — **must differ from the writer** |
-| TTS | `genblaze-elevenlabs` |
+| Role | Provider | Through Genblaze? |
+|---|---|---|
+| Speech-to-text | Groq `whisper-large-v3-turbo` | No. There is no `genblaze-groq` adapter. |
+| Vision (facts + fill/skip) | Gemini | No. `genblaze-google` ships only `ImagenProvider` and `VeoProvider`, no text provider. |
+| Description writing | Gemini | No, same reason. |
+| Coverage checker | Groq Llama `llama-3.3-70b-versatile` | No. Different provider from the writer, which is the point. |
+| TTS | ElevenLabs | **Yes.** `Pipeline` + `ElevenLabsTTSProvider` + `ObjectStorageSink`. |
 
-Grading your own output with the model that wrote it is worthless and a judge will notice.
+Grading your own output with the model that wrote it is worthless and a judge
+will notice, which is why the checker is Groq and the writer is Gemini.
 
-`ModelRegistry` carries pricing, so cost per run comes free. `Tracer` / `OTelTracer` give per-stage timing.
+The bypasses are stated reasons, not apologies: no Groq adapter exists, and the
+Google adapter generates images and video, not text. TTS is the one genuine
+generation step with a working adapter, so that is the one that is orchestrated.
+
+**`speed` is not forwarded by the TTS adapter.** It builds `voice_settings` from
+`stability`, `similarity_boost` and `style` only. The fit loop's speed
+escalation therefore stays on direct HTTP; routing it through the adapter would
+render at normal speed while appearing to work.
+
+`ModelRegistry` carries pricing, but `estimated_cost()` returns 0 for the
+ElevenLabs TTS spec, so cost per run is currently 0.00 rather than a real
+number. `Tracer` / `OTelTracer` are available and not yet attached.
 
 ### Env var conflict
 
@@ -155,16 +195,24 @@ The existing `.env` uses `BACKBLAZE_APPLICATION_KEY_ID`, `BACKBLAZE_APPLICATION_
 
 | Stage | Input | Output | Provider |
 |---|---|---|---|
-| Transcribe | source | word-level timestamps | STT |
-| Find gaps | transcript | silences >= 1.5s | deterministic |
-| Keyframes | video + gaps | frames at gap midpoints and scene changes | ffmpeg |
-| Analyse | frames + surrounding dialogue | essential visual facts | vision |
-| **Filter** | facts per gap | fill or leave silent | vision, same call |
-| Write | facts + word budget | candidate description | text |
-| Narrate | description | audio, measured | TTS |
-| Check | audio-only text + facts | coverage score | second text provider |
+| Transcribe | source | word-level timestamps | Groq `whisper-large-v3-turbo` |
+| Find gaps | transcript | silences >= 1.5s | deterministic, no model |
+| Analyse | **whole video** + surrounding dialogue | essential visual facts | Gemini |
+| **Filter** | facts per gap | fill or leave silent | Gemini, same call |
+| Write | facts + word budget | candidate description | Gemini |
+| Narrate | description | audio, measured | ElevenLabs **via Genblaze Pipeline** |
+| Check | audio-only text + facts | coverage score | Groq Llama, different provider |
 | Mux | original + descriptions | described audio, ducked | ffmpeg |
-| Publish | tracks + manifest | presigned URLs, audit record | B2 |
+| Publish | run + manifest | Object Lock audit record | Genblaze `ObjectStorageSink` |
+
+**There is no keyframe stage.** The whole video goes to Gemini, so the model
+sees motion rather than one still per gap, and nothing local has to decode
+media. This also removed the last dependency on PyAV, whose unsigned ffmpeg DLLs
+are blocked by Smart App Control on Windows.
+
+Transcription is hosted rather than local `faster-whisper` for the same reason:
+`faster-whisper` imports PyAV. Groq accepts the mp4 directly, is faster, and is
+more accurate than a local `base` model.
 
 ---
 
@@ -227,12 +275,11 @@ Most of what the worker needs is answerable by "does this artifact exist yet?"
 |---|---|
 | Transcribed | `analysis/{videoId}/transcript.json` |
 | Gaps found | `analysis/{videoId}/gaps.json` |
-| Keyframes | `analysis/{videoId}/frames/` |
 | Analysed | `analysis/{videoId}/decisions.json` |
 | Described | per gap: a committed attempt under `attempts/{gapId}/` |
 | Coverage checked | `analysis/{videoId}/coverage.json` |
 | Muxed | `final/{videoId}/described-audio.m4a` |
-| Published | manifest in the compliance bucket |
+| Published | `final/{videoId}/manifest.json` receipt, manifest locked in the compliance bucket |
 
 On startup the worker walks that list and resumes at the first gap. No database required. **This is the crash-resume story.** State was never in a database, it is in the artifacts.
 
@@ -305,11 +352,18 @@ BACKBLAZE_REGION=
 BACKBLAZE_MEDIA_BUCKET=interlude-media
 BACKBLAZE_COMPLIANCE_BUCKET=interlude-compliance
 
-B2_KEY_ID=                   # Genblaze reads these names
-B2_APP_KEY=
-B2_BUCKET=interlude-media
+B2_KEY_ID=                   # Genblaze reads these names. storage.py copies the
+B2_APP_KEY=                  # BACKBLAZE_ values across at startup, so leave blank
+B2_BUCKET=interlude-media    # unless Genblaze needs a different key or bucket
 B2_REGION=
+
+GOOGLE_API_KEY=              # vision + writer
+GROQ_API_KEY=                # transcription + coverage checker
+ELEVENLABS_API_KEY=          # narration
+ELEVENLABS_VOICE_ID=         # must be a premade voice, library voices 402 on free
 ```
+
+`WHISPER_MODEL` is gone. Transcription is hosted, tuned by `GROQ_WHISPER_MODEL`.
 
 Provider keys per the Genblaze adapters in use.
 
@@ -342,23 +396,55 @@ Origins must match exactly including scheme and port, no trailing slash. `"*"` c
 
 ## Status
 
+Last verified 30 Jul 2026 by running a clip end to end, not by reading code.
+
 **Done**
-- Two B2 buckets created, Object Lock on compliance
-- `POST /api/presigned_url` with content-type allowlist and server-controlled keys
+- Two B2 buckets, Object Lock on compliance, CORS on both bucket and API
+- Upload path: presigned PUT, direct-to-B2, completion verify, size cap
+- Uploader UI with progress, toasts, live timeline over SSE
+- Worker: asyncio queue, one job at a time, resume from B2 artifacts
+- All seven stages: transcribe, gaps, analyse, describe, coverage, mux, publish
+- Loop 1 (fit) and Loop 2 (coverage), both real
+- Narration orchestrated through a Genblaze `Pipeline`
+- Manifest written by `ObjectStorageSink` into the Object Lock bucket
+- Demo gallery with presigned playback and provenance
+
+**Measured on a 115s clip**
+
+| Metric | Value |
+|---|---|
+| Description density | 100% (1 of 1 eligible gap filled) |
+| Fit rate, first pass | 0-100%, varies by run |
+| Fit rate, final | 100% |
+| Fact coverage, before | 0% |
+| Fact coverage, after | 100% |
+| Cache hit rate | 0%, see the Genblaze section |
+| Estimated cost | $0.00, no pricing in the TTS spec |
+| Wall clock | 160-240s |
+
+The clip is a talking-head recording with one describable gap. It exercises the
+pipeline but is a weak showcase. The OpenCourseWare run is what produces numbers
+worth publishing.
 
 **Next**
-- CORS on bucket and API
-- Completion endpoint: verify the object landed, queue the job
-- Transcribe, gap detection, keyframes
-- Loop 1, then Loop 2
-- Mux, publish, manifest to Object Lock
-- Timeline UI over SSE
-- OpenCourseWare run
+- Seed the gallery with finished examples and one-click samples
+- The OpenCourseWare run, which replaces the illustrative 4,000
+- Deploy: Railway, Dockerfile with ffmpeg, one throwaway deploy early
+- Lifecycle rules on the media bucket, scoped app keys per bucket
+- Demo video, write-up against criteria 3 and 4
+- Record a fallback run, rehearse the crash-resume take
 
 **Deferred**
 - Postgres
-- Dockerfile
-- Size limits, env validation
+- `parent_run_id` lineage for the retry chain
+- Tracer for per-stage timing
+
+**Known gaps**
+- Object Lock is GOVERNANCE and the app key holds `bypassGovernance`, so the
+  record is deletable by whoever holds that key. COMPLIANCE mode closes it.
+- Gemini occasionally returns malformed JSON; the writer retries, the analyse
+  stage does not yet.
+- No cap on clip length for live processing.
 
 ---
 
