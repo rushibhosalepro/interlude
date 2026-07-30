@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 import storage
-from worker import analyse, fit, gaps, manifest, mux, state, transcribe
+from worker import analyse, coverage, fit, gaps, manifest, mux, state, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -125,6 +125,46 @@ async def stage_describe(job: dict, workdir: Path) -> None:
     )
 
 
+async def stage_coverage(job: dict, workdir: Path) -> None:
+    """Loop 2: measure what a listener could actually reconstruct from audio alone.
+
+    Checked by a different provider from the one that wrote the descriptions.
+    """
+    transcript = await asyncio.to_thread(
+        storage.get_json, artifact_key(job, "analysis/{videoId}/transcript.json")
+    )
+    decisions = await asyncio.to_thread(
+        storage.get_json, artifact_key(job, "analysis/{videoId}/decisions.json")
+    )
+    descriptions = await asyncio.to_thread(
+        storage.get_json, artifact_key(job, "analysis/{videoId}/descriptions.json")
+    )
+    gap_data = await asyncio.to_thread(
+        storage.get_json, artifact_key(job, "analysis/{videoId}/gaps.json")
+    )
+
+    gaps_by_id = {g["id"]: g for g in gap_data["gaps"]}
+    committed = [r for r in descriptions["results"] if r["status"] == "committed"]
+
+    result = await coverage.check(
+        transcript, decisions["decisions"], committed, gaps_by_id
+    )
+
+    logger.info(
+        "coverage %.0f%% -> %.0f%% of %d fact(s), target %.0f%% %s",
+        result["coverageBefore"] * 100,
+        result["coverageAfter"] * 100,
+        result["facts"],
+        result["target"] * 100,
+        "met" if result["meetsTarget"] else f"MISSED, {len(result['missing'])} fact(s) short",
+    )
+    state.publish(job["jobId"], {"type": "coverage", **result})
+
+    await asyncio.to_thread(
+        storage.put_json, artifact_key(job, "analysis/{videoId}/coverage.json"), result
+    )
+
+
 async def stage_mux(job: dict, workdir: Path) -> None:
     """Mix narration into the original audio and write the VTT alongside it."""
     descriptions = await asyncio.to_thread(
@@ -174,12 +214,13 @@ async def stage_publish(job: dict, workdir: Path) -> None:
     )
 
 
-# in order. coverage (loop 2) still to come.
+# in order, the full pipeline from ARCHITECTURE.md.
 STAGES = [
     ("transcribe", "analysis/{videoId}/transcript.json", stage_transcribe),
     ("gaps", "analysis/{videoId}/gaps.json", stage_gaps),
     ("analyse", "analysis/{videoId}/decisions.json", stage_analyse),
     ("describe", "analysis/{videoId}/descriptions.json", stage_describe),
+    ("coverage", "analysis/{videoId}/coverage.json", stage_coverage),
     ("mux", "final/{videoId}/described-audio.m4a", stage_mux),
     ("publish", "final/{videoId}/manifest.json", stage_publish),
 ]

@@ -51,4 +51,13 @@ app.include_router(router=projects_router, prefix=URL_PREFIX)
 
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="127.0.0.1", port=3001, reload=True)
+    # configurable because a killed uvicorn can leave an orphaned listener on
+    # windows: the port still answers, from the old code, and a new server binds
+    # alongside it but never receives traffic. moving port is the quick way out,
+    # a reboot is the real fix. keep API_PORT in step with BUN_PUBLIC_API_URL.
+    uvicorn.run(
+        "main:app",
+        host="127.0.0.1",
+        port=int(os.getenv("API_PORT", "3001")),
+        reload=True,
+    )

@@ -10,6 +10,7 @@ const STAGES = [
   { id: "gaps", label: "Find gaps", hint: "silences worth describing" },
   { id: "analyse", label: "Analyse", hint: "fill or leave silent" },
   { id: "describe", label: "Fit loop", hint: "write, render, measure, retry" },
+  { id: "coverage", label: "Coverage loop", hint: "audio-only recheck, second provider" },
   { id: "mux", label: "Mux", hint: "described audio track" },
   { id: "publish", label: "Publish", hint: "manifest to the object lock bucket" },
 ] as const;
