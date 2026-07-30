@@ -4,13 +4,20 @@ import { CheckCircle2, FileVideo, Loader2, UploadCloud, X } from "lucide-react";
 import { toast } from "sonner";
 
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
 import { cn } from "@/lib/utils";
 
 const API_URL = process.env.BUN_PUBLIC_API_URL;
 
 // mirrors ALLOWED_VIDEO_TYPES on the backend
-const ACCEPT = "video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.mkv";
+const ACCEPT =
+  "video/mp4,video/webm,video/quicktime,video/x-matroska,.mp4,.webm,.mov,.mkv";
 
 type Status = "idle" | "uploading" | "done" | "error";
 
@@ -64,10 +71,13 @@ export function FileUploader() {
 
     try {
       // 1. ask our api for a scoped, short lived upload url
-      const { data: presign } = await axios.post(`${API_URL}/api/presigned_url`, {
-        filename: file.name,
-        content_type: file.type,
-      });
+      const { data: presign } = await axios.post(
+        `${API_URL}/api/presigned_url`,
+        {
+          filename: file.name,
+          content_type: file.type,
+        },
+      );
 
       // 2. send the bytes straight to storage, never through our api.
       // the header must match what the url was signed with, not file.type.
@@ -125,15 +135,25 @@ export function FileUploader() {
           className={cn(
             "flex flex-col items-center justify-center gap-2 rounded-lg border border-dashed px-6 py-10 text-center transition-colors outline-none",
             "focus-visible:ring-ring/50 focus-visible:ring-[3px]",
-            dragging ? "border-primary bg-accent" : "border-input hover:bg-accent/50",
+            dragging
+              ? "border-primary bg-accent"
+              : "border-input hover:bg-accent/50",
             busy && "pointer-events-none opacity-60",
           )}
         >
-          <UploadCloud className="text-muted-foreground size-8" strokeWidth={1.5} />
+          <UploadCloud
+            className="text-muted-foreground size-8"
+            strokeWidth={1.5}
+          />
           <p className="text-sm font-medium">
-            Drop your video here, or <span className="underline underline-offset-4">browse</span>
+            Drop your video here, or{" "}
+            <span className="underline underline-offset-4 cursor-pointer">
+              browse
+            </span>
           </p>
-          <p className="text-muted-foreground text-xs">Your file uploads directly to storage</p>
+          <p className="text-muted-foreground text-xs">
+            Your file uploads directly to storage
+          </p>
         </div>
 
         <input
@@ -146,7 +166,10 @@ export function FileUploader() {
 
         {file && (
           <div className="flex items-center gap-3 rounded-lg border p-3">
-            <FileVideo className="text-muted-foreground size-5 shrink-0" strokeWidth={1.5} />
+            <FileVideo
+              className="text-muted-foreground size-5 shrink-0"
+              strokeWidth={1.5}
+            />
 
             <div className="min-w-0 flex-1">
               <p className="truncate text-sm font-medium">{file.name}</p>
@@ -172,7 +195,7 @@ export function FileUploader() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="size-7 shrink-0"
+                className="size-7 shrink-0 cursor-pointer"
                 onClick={reset}
                 disabled={busy}
                 aria-label="Remove file"
@@ -186,11 +209,15 @@ export function FileUploader() {
         {error && <p className="text-destructive text-sm">{error}</p>}
 
         {status === "done" ? (
-          <Button variant="outline" onClick={reset}>
+          <Button variant="outline" onClick={reset} className="cursor-pointer">
             Upload another
           </Button>
         ) : (
-          <Button onClick={upload} disabled={!file || busy}>
+          <Button
+            onClick={upload}
+            className="cursor-pointer"
+            disabled={!file || busy}
+          >
             {busy && <Loader2 className="size-4 animate-spin" />}
             {busy ? "Uploading" : "Upload"}
           </Button>
