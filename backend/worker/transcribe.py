@@ -15,6 +15,8 @@ from pathlib import Path
 
 import httpx
 
+from worker.retry import RetryableStatus, should_retry_status, with_retry
+
 logger = logging.getLogger(__name__)
 
 MODEL = os.getenv("GROQ_WHISPER_MODEL", "whisper-large-v3-turbo")
@@ -61,9 +63,15 @@ async def transcribe(video_path: str) -> dict:
                 timeout=300,
             )
 
-    # httpx here is the sync client, so it goes on a thread like every other
-    # blocking call, or the event loop stalls for the whole upload
-    response = await asyncio.to_thread(_post)
+    async def _attempt() -> httpx.Response:
+        # httpx here is the sync client, so it goes on a thread like every other
+        # blocking call, or the event loop stalls for the whole upload
+        result = await asyncio.to_thread(_post)
+        if should_retry_status(result.status_code):
+            raise RetryableStatus(f"groq returned {result.status_code}")
+        return result
+
+    response = await with_retry(_attempt, label="groq transcribe")
 
     if response.status_code != 200:
         raise TranscriptionError(

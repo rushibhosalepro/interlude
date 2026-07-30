@@ -23,6 +23,8 @@ from pathlib import Path
 
 import httpx
 
+from worker.retry import RetryableStatus, should_retry_status, with_retry
+
 logger = logging.getLogger(__name__)
 
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
@@ -143,8 +145,14 @@ async def analyse(video_path: str, gaps: list[dict], transcript: dict) -> dict:
             timeout=300,
         )
 
+    async def _attempt() -> httpx.Response:
+        result = await asyncio.to_thread(_post)
+        if should_retry_status(result.status_code):
+            raise RetryableStatus(f"gemini returned {result.status_code}")
+        return result
+
     logger.info("analysing %d gap(s) with %s", len(gaps), MODEL)
-    response = await asyncio.to_thread(_post)
+    response = await with_retry(_attempt, label="gemini analyse")
 
     if response.status_code != 200:
         raise AnalysisError(

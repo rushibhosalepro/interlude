@@ -17,6 +17,8 @@ import wave
 
 import httpx
 
+from worker.retry import RetryableStatus, should_retry_status, with_retry
+
 logger = logging.getLogger(__name__)
 
 # free tier premade voice. voices from the ElevenLabs voice *library* return 402
@@ -75,7 +77,13 @@ async def narrate(text: str, speed: float = 1.0) -> tuple[bytes, float]:
             timeout=120,
         )
 
-    response = await asyncio.to_thread(_post)
+    async def _attempt() -> httpx.Response:
+        result = await asyncio.to_thread(_post)
+        if should_retry_status(result.status_code):
+            raise RetryableStatus(f"elevenlabs returned {result.status_code}")
+        return result
+
+    response = await with_retry(_attempt, label="elevenlabs narrate")
 
     if response.status_code != 200:
         detail = response.text[:300]
