@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import axios from "axios";
-import { AudioLines, Loader2, ShieldCheck } from "lucide-react";
+import { AudioLines, Download, Loader2, ShieldCheck } from "lucide-react";
 
 import {
   Card,
@@ -27,6 +27,7 @@ type Project = {
   projectId: string;
   videoId: string;
   durationSeconds: number | null;
+  videoUrl: string;
   audioUrl: string;
   vttUrl: string;
   metrics: {
@@ -119,10 +120,24 @@ export function DemoGallery({ refreshKey = 0 }: { refreshKey?: number }) {
             </CardHeader>
 
             <CardContent className="flex flex-col gap-4">
-              {/* the payoff: the thing this project exists to produce */}
-              <audio controls preload="none" src={project.audioUrl} className="w-full">
-                Your browser does not support audio playback.
-              </audio>
+              {/* the payoff: the original video with the described track on it */}
+              <video
+                controls
+                preload="metadata"
+                src={project.videoUrl}
+                className="w-full rounded-md border bg-black"
+              >
+                Your browser does not support video playback.
+              </video>
+
+              <a
+                href={project.videoUrl}
+                download
+                className="text-muted-foreground hover:text-foreground inline-flex items-center gap-1.5 self-start text-xs underline underline-offset-4"
+              >
+                <Download className="size-3.5" />
+                Download described video
+              </a>
 
               <div className="grid grid-cols-4 gap-3 border-y py-3">
                 <Stat label="gaps found" value={String(m.gapsFound)} />

@@ -70,6 +70,7 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
         "videoId": video_id,
         "durationSeconds": (transcript or {}).get("duration"),
         "language": (transcript or {}).get("language"),
+        "videoUrl": _presign_get(f"{final}/described.mp4"),
         "audioUrl": _presign_get(f"{final}/described-audio.m4a"),
         "vttUrl": _presign_get(f"{final}/descriptions.vtt"),
         "sourceUrl": _presign_get(f"{base}/source/{video_id}.mp4"),

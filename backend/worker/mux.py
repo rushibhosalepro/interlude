@@ -66,6 +66,31 @@ def _filter_graph(placements: list[dict]) -> str:
     return ";".join(parts)
 
 
+async def mux_to_video(video_path: str, described_audio: Path, workdir: Path) -> bytes:
+    """The original video with the described audio in place of its soundtrack.
+
+    The video stream is copied, not re-encoded, so this costs seconds rather
+    than minutes and loses no quality. `-shortest` guards against the described
+    track running fractionally long and padding the file.
+    """
+    out_path = workdir / "described.mp4"
+
+    await ffmpeg.run([
+        "-v", "error", "-y",
+        "-i", video_path,
+        "-i", str(described_audio),
+        "-map", "0:v:0",
+        "-map", "1:a:0",
+        "-c:v", "copy",
+        "-c:a", "aac",
+        "-shortest",
+        str(out_path),
+    ])
+
+    logger.info("muxed described audio onto the video, %.1f MB", out_path.stat().st_size / 1_048_576)
+    return out_path.read_bytes()
+
+
 async def mux(
     project_id: str,
     video_path: str,

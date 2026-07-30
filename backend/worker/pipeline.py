@@ -237,11 +237,24 @@ async def stage_mux(job: dict, workdir: Path) -> None:
         "text/vtt",
     )
 
+    # the video with the described track in place of its soundtrack, which is
+    # what the gallery plays and what a judge downloads
+    described_video = await mux.mux_to_video(
+        str(video), workdir / "described-audio.m4a", workdir
+    )
+    await asyncio.to_thread(
+        storage.put_bytes,
+        artifact_key(job, "final/{videoId}/described.mp4"),
+        described_video,
+        "video/mp4",
+    )
+
     logger.info(
-        "muxed %.1fs of described audio, %.1f MB, %d description(s)",
+        "muxed %.1fs of described audio, %.1f MB, %d description(s), video %.1f MB",
         seconds,
         len(audio) / 1_048_576,
         len(committed),
+        len(described_video) / 1_048_576,
     )
 
 
@@ -264,7 +277,9 @@ STAGES = [
     ("analyse", "analysis/{videoId}/decisions.json", stage_analyse),
     ("describe", "analysis/{videoId}/descriptions.json", stage_describe),
     ("coverage", "analysis/{videoId}/coverage.json", stage_coverage),
-    ("mux", "final/{videoId}/described-audio.m4a", stage_mux),
+    # described.mp4 is the last thing mux writes, so it is the honest resume
+    # marker: the m4a existing does not mean the stage finished
+    ("mux", "final/{videoId}/described.mp4", stage_mux),
     ("publish", "final/{videoId}/manifest.json", stage_publish),
 ]
 
