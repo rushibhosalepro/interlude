@@ -20,6 +20,7 @@ from datetime import datetime, timedelta, timezone
 
 from genblaze import (
     Manifest,
+    ObjectStorageSink,
     ObjectLockConfig,
     PromptVisibility,
     RunBuilder,
@@ -28,6 +29,8 @@ from genblaze import (
     StepStatus,
     StepType,
 )
+
+from genblaze_s3 import S3StorageBackend
 
 import storage
 from worker import analyse, narrate, transcribe, write
@@ -134,6 +137,13 @@ def build_run(
             .build()
         )
 
+    # The outputs are recorded as metadata rather than Asset objects on purpose.
+    # ObjectStorageSink.write_run transfers every referenced Asset into its own
+    # backend and refuses to write the manifest if that fails. Since the manifest
+    # sink points at the compliance bucket, attaching Assets would copy the audio
+    # there and Object Lock would make it immutable, in a bucket meant to hold one
+    # small record per video. The sha256 still lands in the manifest and is still
+    # covered by the canonical hash, so tamper evidence is unchanged.
     mix = (
         StepBuilder("ffmpeg", "ffmpeg")
         .step_type(StepType.MIX)
@@ -141,8 +151,15 @@ def build_run(
         .status(StepStatus.SUCCEEDED)
         .params(**{"duck": 0.25, "codec": "aac"})
     )
-    for asset in final_assets:
-        mix = mix.asset(**asset)
+    for index, asset in enumerate(final_assets):
+        mix = mix.meta(
+            **{
+                f"output{index}Key": asset["asset_id"],
+                f"output{index}Sha256": asset["sha256"],
+                f"output{index}Bytes": str(asset["size_bytes"]),
+                f"output{index}MediaType": asset["media_type"],
+            }
+        )
     builder.add_step(mix.build())
 
     return builder.build()
@@ -184,19 +201,20 @@ async def publish(job: dict) -> dict:
     manifest = Manifest.from_run(run)
 
     stamped = datetime.now(timezone.utc)
-    key = f"compliance/{job['projectId']}/{video_id}/{stamped.isoformat()}.json"
-
     lock = ObjectLockConfig(retain_until=stamped + timedelta(days=RETENTION_DAYS))
 
-    await asyncio.to_thread(
-        lambda: storage.client.put_object(
-            Bucket=storage.compliance_bucket,
-            Key=key,
-            Body=manifest.model_dump_json(indent=2).encode(),
-            ContentType="application/json",
-            **lock.to_extra_args(),
-        )
+    # The SDK writes the manifest, not boto3. A second sink is needed because
+    # ObjectStorageSink has a single backend: the narration sink points at the
+    # media bucket for assets, so the manifest needs its own pointed at the
+    # compliance bucket, where manifest_lock applies Object Lock on write.
+    sink = ObjectStorageSink(
+        S3StorageBackend.for_backblaze(storage.compliance_bucket),
+        prefix="compliance",
+        manifest_lock=lock,
     )
+
+    key = sink.manifest_key_for(run)
+    await asyncio.to_thread(sink.write_run, run, manifest)
 
     logger.info(
         "manifest %s locked until %s (%d steps, hash %s)",

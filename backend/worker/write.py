@@ -88,22 +88,25 @@ async def write_description(
             timeout=120,
         )
 
-    async def _attempt() -> httpx.Response:
+    async def _attempt() -> str:
         result = await asyncio.to_thread(_post)
         if should_retry_status(result.status_code):
             raise RetryableStatus(f"gemini returned {result.status_code}")
-        return result
+        if result.status_code != 200:
+            raise WriteError(
+                f"gemini returned {result.status_code}: {result.text[:300]}"
+            )
 
-    response = await with_retry(_attempt, label="gemini write")
+        # Gemini occasionally returns malformed JSON even with
+        # responseMimeType=application/json. Regenerating is the fix; failing the
+        # whole job over one bad response is not.
+        try:
+            raw = result.json()["candidates"][0]["content"]["parts"][0]["text"]
+            return json.loads(raw)["text"].strip()
+        except (KeyError, IndexError, ValueError) as exc:
+            raise RetryableStatus(f"unparseable response: {exc}") from exc
 
-    if response.status_code != 200:
-        raise WriteError(f"gemini returned {response.status_code}: {response.text[:300]}")
-
-    try:
-        raw = response.json()["candidates"][0]["content"]["parts"][0]["text"]
-        text = json.loads(raw)["text"].strip()
-    except (KeyError, IndexError, ValueError) as exc:
-        raise WriteError(f"could not parse gemini response: {exc}") from exc
+    text = await with_retry(_attempt, label="gemini write")
 
     if not text:
         raise WriteError("model returned an empty description")

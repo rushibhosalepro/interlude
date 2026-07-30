@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 import storage
-from worker import analyse, coverage, fit, gaps, manifest, mux, state, transcribe
+from worker import analyse, coverage, fit, gaps, manifest, mux, narrate, state, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -109,17 +109,53 @@ async def stage_describe(job: dict, workdir: Path) -> None:
         storage.get_json, artifact_key(job, "analysis/{videoId}/transcript.json")
     )
 
+    # cache counters are per process, so diff around this job to get its own
+    before = narrate.cache_stats()
+
     result = await fit.fit_all(
         job["jobId"], job["projectId"], gap_data["gaps"], decisions["decisions"], transcript
     )
 
+    after = narrate.cache_stats()
+    hits = after["cacheHits"] - before["cacheHits"]
+    misses = after["cacheMisses"] - before["cacheMisses"]
+    looked_up = hits + misses
+
+    result["cache"] = {
+        "hits": hits,
+        "misses": misses,
+        # identical description text renders to the same content-addressed key,
+        # so a re-run of the same input pays for nothing it already rendered
+        "hitRate": round(hits / looked_up, 4) if looked_up else 0.0,
+        "sdkRenders": after["sdkRenders"] - before["sdkRenders"],
+        "directRenders": after["directRenders"] - before["directRenders"],
+        "estimatedCostUsd": round(
+            after["estimatedCostUsd"] - before["estimatedCostUsd"], 6
+        ),
+    }
+
     logger.info(
-        "committed %d/%d gap(s) in %d attempt(s), first pass fit %.0f%%",
+        "committed %d/%d gap(s) in %d attempt(s), first pass fit %.0f%%, cache %d/%d (%.0f%%)",
         result["committed"],
         result["attempted"],
         result["totalAttempts"],
         result["firstPassFitRate"] * 100,
+        hits,
+        looked_up,
+        result["cache"]["hitRate"] * 100,
     )
+
+    # alongside the existing numbers in jobs/{jobId}/state.json, and over SSE
+    job["metrics"] = {
+        **(job.get("metrics") or {}),
+        "firstPassFitRate": result["firstPassFitRate"],
+        "finalFitRate": result["finalFitRate"],
+        "totalAttempts": result["totalAttempts"],
+        "cacheHitRate": result["cache"]["hitRate"],
+        "estimatedCostUsd": result["cache"]["estimatedCostUsd"],
+    }
+    await state.save(job)
+
     await asyncio.to_thread(
         storage.put_json, artifact_key(job, "analysis/{videoId}/descriptions.json"), result
     )
@@ -158,6 +194,13 @@ async def stage_coverage(job: dict, workdir: Path) -> None:
         result["target"] * 100,
         "met" if result["meetsTarget"] else f"MISSED, {len(result['missing'])} fact(s) short",
     )
+    job["metrics"] = {
+        **(job.get("metrics") or {}),
+        "coverageBefore": result["coverageBefore"],
+        "coverageAfter": result["coverageAfter"],
+        "descriptionDensity": (decisions or {}).get("density", 0),
+    }
+    await state.save(job)
     state.publish(job["jobId"], {"type": "coverage", **result})
 
     await asyncio.to_thread(
