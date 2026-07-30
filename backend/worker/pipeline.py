@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 import storage
-from worker import analyse, fit, gaps, mux, state, transcribe
+from worker import analyse, fit, gaps, manifest, mux, state, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +162,18 @@ async def stage_mux(job: dict, workdir: Path) -> None:
     )
 
 
+async def stage_publish(job: dict, workdir: Path) -> None:
+    """Write the Genblaze manifest to the Object Lock bucket.
+
+    The receipt lives in the media bucket so the resume check can see it; the
+    manifest itself is locked in the compliance bucket where it cannot be edited.
+    """
+    receipt = await manifest.publish(job)
+    await asyncio.to_thread(
+        storage.put_json, artifact_key(job, "final/{videoId}/manifest.json"), receipt
+    )
+
+
 # in order. coverage (loop 2) still to come.
 STAGES = [
     ("transcribe", "analysis/{videoId}/transcript.json", stage_transcribe),
@@ -169,6 +181,7 @@ STAGES = [
     ("analyse", "analysis/{videoId}/decisions.json", stage_analyse),
     ("describe", "analysis/{videoId}/descriptions.json", stage_describe),
     ("mux", "final/{videoId}/described-audio.m4a", stage_mux),
+    ("publish", "final/{videoId}/manifest.json", stage_publish),
 ]
 
 

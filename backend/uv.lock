@@ -39,6 +39,7 @@ source = { virtual = "." }
 dependencies = [
     { name = "boto3" },
     { name = "fastapi" },
+    { name = "genblaze" },
     { name = "httpx" },
     { name = "pillow" },
     { name = "pydantic-settings" },
@@ -52,6 +53,7 @@ dependencies = [
 requires-dist = [
     { name = "boto3", specifier = ">=1.43.57" },
     { name = "fastapi", specifier = ">=0.140.7" },
+    { name = "genblaze", specifier = ">=0.4.3" },
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pillow", specifier = ">=12.3.0" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
@@ -133,6 +135,47 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/e1/33/e0dfa29ccce4eb8c9a073f9e557b0d6bacbb3aa32e7ad595f678de4d036a/fastapi-0.140.7.tar.gz", hash = "sha256:09a640af2d29006345e1f28e4f031fa60f89b1a75d29f26070f3afa677d66cce", size = 422051, upload-time = "2026-07-27T17:34:45.908Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/7b/0e/00cddd6b8668884e9c7588ab0eeb73becbd1efa3eaead34397f2e9a8de49/fastapi-0.140.7-py3-none-any.whl", hash = "sha256:960bb9696d8fd19dff488aa4f67f276364542cfcce9f7e68a82fe49dce126626", size = 131085, upload-time = "2026-07-27T17:34:47.036Z" },
+]
+
+[[package]]
+name = "genblaze"
+version = "0.4.3"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "genblaze-core" },
+    { name = "genblaze-s3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/71/bc/4cb7c4ef6122edf170de0fcf9391acb4011d9b464c140ee11b7655ae8085/genblaze-0.4.3.tar.gz", hash = "sha256:14cc90e58728d8ac4a2d71875d58893910c007a0efc2c068cfb12afc7963afc2", size = 5187, upload-time = "2026-07-17T16:19:14.452Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/8b/c1/bab917479eae54383ffd93cd0c23d7b62e729e4a1397d0d10fa7cffcdb13/genblaze-0.4.3-py3-none-any.whl", hash = "sha256:7e92255947a7d1244326f587e3bea733fb9b66d22b83f1f20d2ed68e00c955c0", size = 4082, upload-time = "2026-07-17T16:19:13.189Z" },
+]
+
+[[package]]
+name = "genblaze-core"
+version = "0.3.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pillow" },
+    { name = "pydantic" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/2d/2c/e5e52bc7201461515a1f904945f79e64676a30641e1b7f8f3881b873771a/genblaze_core-0.3.6.tar.gz", hash = "sha256:0b185da3df1e46daf9dcb29122a7db4f632033f3ee4b74ae41d13badd6a851e4", size = 434018, upload-time = "2026-07-17T16:17:59.404Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/6a/62/2fc8bff49609078e65359ffa8152b55b9c044c44c54bb11604bcf9f5a52b/genblaze_core-0.3.6-py3-none-any.whl", hash = "sha256:aef6ae21d09dfa9b572a26b5bcec210c6523f96a132674fe53bc36215fe30b48", size = 281591, upload-time = "2026-07-17T16:17:58.126Z" },
+]
+
+[[package]]
+name = "genblaze-s3"
+version = "0.3.6"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "boto3" },
+    { name = "botocore" },
+    { name = "genblaze-core" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/4b/3c/ceb62a3d337b81b8fe5b31ccfe0d481d665041325232907afdadd86fe78b/genblaze_s3-0.3.6.tar.gz", hash = "sha256:227c561398dba84ad4c83b3b62a15073276c01df7859b59b777a95e6e8d56c27", size = 76986, upload-time = "2026-07-22T15:23:21.288Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/f9/4e/8db58a47cd431dd2348b4f705baa00d1d073c6b4e6f6a18a11b626079b53/genblaze_s3-0.3.6-py3-none-any.whl", hash = "sha256:abb683e6b600632025bd22f7704530f0a0dc13f615ca94b4db86ff611ad9152d", size = 44124, upload-time = "2026-07-22T15:23:19.387Z" },
 ]
 
 [[package]]
