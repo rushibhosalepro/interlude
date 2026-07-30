@@ -41,6 +41,11 @@ Write it the way a person would say it out loud.
   characters.
 - Present tense, plain and factual. Skip adjectives that carry no information.
 - Do not repeat anything the dialogue already said.
+- If the budget is too small for every fact, say the most important one
+  properly rather than all of them badly. A listener is better served by one
+  clear statement than by three mangled ones. Colours, positions and styling
+  are the first things to drop; what the thing is and what it says are the
+  last.
 
 Good:  The video ends on an end card reading: onsite, built with GPT-5.6.
 Good:  He sketches a binary tree on the whiteboard.
