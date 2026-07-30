@@ -34,7 +34,7 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(1)} ${units[unit]}`;
 }
 
-export function FileUploader() {
+export function FileUploader({ onFinished }: { onFinished?: () => void }) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
@@ -214,7 +214,7 @@ export function FileUploader() {
 
         {jobId && (
           <div className="border-t pt-4">
-            <JobTimeline jobId={jobId} />
+            <JobTimeline jobId={jobId} onFinished={onFinished} />
           </div>
         )}
 

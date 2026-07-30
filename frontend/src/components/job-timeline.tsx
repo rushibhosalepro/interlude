@@ -11,6 +11,7 @@ const STAGES = [
   { id: "analyse", label: "Analyse", hint: "fill or leave silent" },
   { id: "describe", label: "Fit loop", hint: "write, render, measure, retry" },
   { id: "mux", label: "Mux", hint: "described audio track" },
+  { id: "publish", label: "Publish", hint: "manifest to the object lock bucket" },
 ] as const;
 
 type Attempt = {
@@ -30,7 +31,13 @@ type Gap = {
   status?: "committed" | "abandoned";
 };
 
-export function JobTimeline({ jobId }: { jobId: string }) {
+export function JobTimeline({
+  jobId,
+  onFinished,
+}: {
+  jobId: string;
+  onFinished?: () => void;
+}) {
   const [status, setStatus] = useState("queued");
   const [stage, setStage] = useState<string | null>(null);
   const [completed, setCompleted] = useState<string[]>([]);
@@ -83,7 +90,10 @@ export function JobTimeline({ jobId }: { jobId: string }) {
       );
     });
 
-    source.addEventListener("end", () => source.close());
+    source.addEventListener("end", (e) => {
+      source.close();
+      if (JSON.parse((e as MessageEvent).data).status === "done") onFinished?.();
+    });
 
     // the browser reconnects automatically on error, which is what we want while
     // the worker restarts. only surface it if the job itself failed.
