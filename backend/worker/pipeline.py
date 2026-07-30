@@ -16,7 +16,7 @@ import tempfile
 from pathlib import Path
 
 import storage
-from worker import analyse, fit, gaps, state, transcribe
+from worker import analyse, fit, gaps, mux, state, transcribe
 
 logger = logging.getLogger(__name__)
 
@@ -125,12 +125,50 @@ async def stage_describe(job: dict, workdir: Path) -> None:
     )
 
 
-# in order. add coverage and mux as we build them.
+async def stage_mux(job: dict, workdir: Path) -> None:
+    """Mix narration into the original audio and write the VTT alongside it."""
+    descriptions = await asyncio.to_thread(
+        storage.get_json, artifact_key(job, "analysis/{videoId}/descriptions.json")
+    )
+    gap_data = await asyncio.to_thread(
+        storage.get_json, artifact_key(job, "analysis/{videoId}/gaps.json")
+    )
+    gaps_by_id = {g["id"]: g for g in gap_data["gaps"]}
+    committed = [r for r in descriptions["results"] if r["status"] == "committed"]
+
+    video = await source_video(job, workdir)
+    audio, seconds = await mux.mux(
+        job["projectId"], str(video), committed, gaps_by_id, workdir
+    )
+
+    await asyncio.to_thread(
+        storage.put_bytes,
+        artifact_key(job, "final/{videoId}/described-audio.m4a"),
+        audio,
+        "audio/mp4",
+    )
+    await asyncio.to_thread(
+        storage.put_bytes,
+        artifact_key(job, "final/{videoId}/descriptions.vtt"),
+        mux.build_vtt(committed, gaps_by_id).encode(),
+        "text/vtt",
+    )
+
+    logger.info(
+        "muxed %.1fs of described audio, %.1f MB, %d description(s)",
+        seconds,
+        len(audio) / 1_048_576,
+        len(committed),
+    )
+
+
+# in order. coverage (loop 2) still to come.
 STAGES = [
     ("transcribe", "analysis/{videoId}/transcript.json", stage_transcribe),
     ("gaps", "analysis/{videoId}/gaps.json", stage_gaps),
     ("analyse", "analysis/{videoId}/decisions.json", stage_analyse),
     ("describe", "analysis/{videoId}/descriptions.json", stage_describe),
+    ("mux", "final/{videoId}/described-audio.m4a", stage_mux),
 ]
 
 
