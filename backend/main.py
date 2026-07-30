@@ -6,6 +6,7 @@ from dotenv import load_dotenv
 
 from routes.backblaze import router as backblaze_router
 from routes.projects import router as projects_router
+from routes.samples import router as samples_router
 
 import logging
 import os
@@ -48,6 +49,7 @@ URL_PREFIX = "/api"
 
 app.include_router(router=backblaze_router, prefix=URL_PREFIX)
 app.include_router(router=projects_router, prefix=URL_PREFIX)
+app.include_router(router=samples_router, prefix=URL_PREFIX)
 
 
 if __name__ == "__main__":

@@ -15,10 +15,26 @@ import logging
 import tempfile
 from pathlib import Path
 
+import os
+
 import storage
-from worker import analyse, coverage, fit, gaps, manifest, mux, narrate, state, transcribe
+from worker import (
+    analyse,
+    coverage,
+    ffmpeg,
+    fit,
+    gaps,
+    manifest,
+    mux,
+    narrate,
+    state,
+    transcribe,
+)
 
 logger = logging.getLogger(__name__)
+
+# a judge should never wait on a full lecture
+MAX_CLIP_SECONDS = float(os.getenv("MAX_CLIP_SECONDS", "90"))
 
 
 def artifact_key(job: dict, template: str) -> str:
@@ -42,8 +58,23 @@ async def source_video(job: dict, workdir: Path) -> Path:
     return local
 
 
+class ClipTooLong(RuntimeError):
+    pass
+
+
 async def stage_transcribe(job: dict, workdir: Path) -> None:
     video = await source_video(job, workdir)
+
+    # Live processing is capped so a judge never waits on a lecture. Checked
+    # here because this is the first point the file is on disk; the API cannot
+    # know the duration from the upload alone.
+    seconds = await ffmpeg.duration(str(video))
+    if seconds > MAX_CLIP_SECONDS:
+        raise ClipTooLong(
+            f"clip is {seconds:.0f}s, over the {MAX_CLIP_SECONDS}s limit for live "
+            "processing. Trim it, or use one of the sample clips."
+        )
+
     result = await transcribe.transcribe(str(video))
     logger.info(
         "transcribed %.1fs of audio, %d words", result["duration"], len(result["words"])
