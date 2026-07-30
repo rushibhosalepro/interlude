@@ -5,6 +5,7 @@ space is long enough, there is room to narrate something into it.
 """
 
 import logging
+import os
 
 logger = logging.getLogger(__name__)
 
@@ -14,9 +15,18 @@ MIN_GAP_SECONDS = 1.5
 # leave a little air either side so narration never collides with speech
 EDGE_PADDING = 0.2
 
-# roughly how many words fit per second of narration. calibrate against the
-# actual voice once TTS is picked, this is a starting point.
-WORDS_PER_SECOND = 2.6
+# Measured, not assumed. 268 words across 33 real renders of the ElevenLabs
+# voice came out at 1.72 w/s, but those were full of quoted strings, which the
+# voice reads slowly. The writer no longer emits quotation marks (they are
+# silent anyway) and clean prose measures nearer 1.95, so 1.85 leaves a margin.
+#
+# The old 2.6 was 51% optimistic. Every first attempt overran, and each retry
+# hacked the sentence shorter until it was a list of labels rather than
+# something a listener could follow.
+#
+# Recalibrate if the voice changes. Acronyms and version numbers cost far more
+# than their word count suggests: "GPT-5.6" is spoken as six syllables.
+WORDS_PER_SECOND = float(os.getenv("WORDS_PER_SECOND", "1.85"))
 
 
 def find_gaps(transcript: dict) -> dict:

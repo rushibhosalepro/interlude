@@ -19,21 +19,36 @@ logger = logging.getLogger(__name__)
 MODEL = os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
 ENDPOINT = "https://generativelanguage.googleapis.com/v1beta/models"
 
-PROMPT = """Write one piece of audio description for a blind viewer.
+PROMPT = """Write one line of audio description for a blind listener.
 
-These are the essential visual facts to convey:
+It gets spoken aloud into a {seconds:.1f} second gap in the audio, so it must be
+at most {budget} words. That is a hard limit.
+
+The visual facts to convey:
 {facts}
 
 Dialogue immediately before this moment: {before}
 Dialogue immediately after: {after}
 
-Rules:
-- At most {budget} words. This is a hard limit, it must be spoken aloud in {seconds:.1f} seconds.
-- Present tense. Plain, factual, neutral.
-- Do not say "we see", "the screen shows", "the video displays". Just state what happens.
-- Do not repeat anything already said in the dialogue above.
-- No adjectives unless they carry essential information.
-- One sentence if possible. Never more than two.
+Write it the way a person would say it out loud.
+
+- A complete sentence with a verb. Never a bare fragment, and never a list of
+  labels read out on their own.
+- Say what the thing IS before its content: "an end card reads", "a diagram
+  shows", "she writes on the whiteboard". Someone who only hears words read off
+  a screen has no idea what they are looking at, which is the whole problem.
+- No quotation marks. They are silent, so they mark nothing and only waste
+  characters.
+- Present tense, plain and factual. Skip adjectives that carry no information.
+- Do not repeat anything the dialogue already said.
+
+Good:  The video ends on an end card reading: onsite, built with GPT-5.6.
+Good:  He sketches a binary tree on the whiteboard.
+Bad:   'onsite' and 'Built with GPT-5.6'.
+Bad:   Fades to black. Text appears.
+Bad:   On black, onsite above Built with GPT-5.6.
+
+The bad ones are bad because a listener cannot tell what they are hearing about.
 {retry}
 Reply with JSON only: {{"text": "..."}}"""
 
