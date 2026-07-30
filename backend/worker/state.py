@@ -13,6 +13,35 @@ import storage
 # live view for the UI. rebuilt from B2 on restart, so losing it costs nothing.
 live: dict[str, dict] = {}
 
+# one queue per connected browser, keyed by job. the worker pushes, SSE drains.
+_subscribers: dict[str, set[asyncio.Queue]] = {}
+
+
+def subscribe(job_id: str) -> asyncio.Queue:
+    queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+    _subscribers.setdefault(job_id, set()).add(queue)
+    return queue
+
+
+def unsubscribe(job_id: str, queue: asyncio.Queue) -> None:
+    listeners = _subscribers.get(job_id)
+    if not listeners:
+        return
+    listeners.discard(queue)
+    if not listeners:
+        _subscribers.pop(job_id, None)
+
+
+def publish(job_id: str, event: dict) -> None:
+    """Fan an event out to every listener. Sync and never blocks: a slow or dead
+    browser must not be able to stall the worker."""
+    event = {**event, "at": _now()}
+    for queue in list(_subscribers.get(job_id, ())):
+        try:
+            queue.put_nowait(event)
+        except asyncio.QueueFull:
+            pass
+
 
 def state_key(job_id: str) -> str:
     return f"jobs/{job_id}/state.json"
@@ -42,6 +71,7 @@ async def create(job_id: str, project_id: str, video_id: str, source_key: str) -
 async def save(state: dict) -> None:
     state["updatedAt"] = _now()
     live[state["jobId"]] = dict(state)
+    publish(state["jobId"], {"type": "state", "state": dict(state)})
     # boto3 is blocking, so it goes on a thread or the whole server stalls
     await asyncio.to_thread(storage.put_json, state_key(state["jobId"]), state)
 

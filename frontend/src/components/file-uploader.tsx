@@ -11,6 +11,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { JobTimeline } from "@/components/job-timeline";
 import { cn } from "@/lib/utils";
 
 const API_URL = process.env.BUN_PUBLIC_API_URL;
@@ -39,12 +40,14 @@ export function FileUploader() {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
+  const [jobId, setJobId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const busy = status === "uploading";
 
   const selectFile = (next: File | null) => {
     setFile(next);
+    setJobId(null);
     setStatus("idle");
     setProgress(0);
     setError(null);
@@ -89,9 +92,12 @@ export function FileUploader() {
         },
       });
 
-      // 3. let the api confirm it landed and enforce the size cap
-      await axios.post(`${API_URL}/api/uploads/complete`, { key: presign.key });
+      // 3. let the api confirm it landed, enforce the size cap and queue the job
+      const { data: job } = await axios.post(`${API_URL}/api/uploads/complete`, {
+        key: presign.key,
+      });
 
+      setJobId(job.jobId);
       setStatus("done");
       toast.success("Upload complete", { description: file.name });
     } catch (err) {
@@ -203,6 +209,12 @@ export function FileUploader() {
                 <X className="size-4" />
               </Button>
             )}
+          </div>
+        )}
+
+        {jobId && (
+          <div className="border-t pt-4">
+            <JobTimeline jobId={jobId} />
           </div>
         )}
 

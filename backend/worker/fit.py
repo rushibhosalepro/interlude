@@ -14,7 +14,7 @@ import asyncio
 import logging
 
 import storage
-from worker import narrate, write
+from worker import narrate, state, write
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +38,7 @@ async def _store_attempt(
 
 
 async def fit_gap(
-    project_id: str, gap: dict, facts: list[str], transcript: dict
+    job_id: str, project_id: str, gap: dict, facts: list[str], transcript: dict
 ) -> dict:
     """Write, render, measure, retry until it fits. Returns the outcome for one gap."""
     target = gap["duration"]
@@ -74,6 +74,7 @@ async def fit_gap(
         }
         attempts.append(record)
         await _store_attempt(project_id, gap["id"], number, record, audio)
+        state.publish(job_id, {"type": "attempt", "gapId": gap["id"], **record})
 
         logger.info(
             "  %s attempt %d: %d words, %.2fs vs %.2fs target -> %s",
@@ -120,6 +121,7 @@ async def fit_gap(
         }
         attempts.append(record)
         await _store_attempt(project_id, gap["id"], number, record, audio)
+        state.publish(job_id, {"type": "attempt", "gapId": gap["id"], **record})
 
         logger.info(
             "  %s attempt %d at %.2fx: %.2fs vs %.2fs -> %s",
@@ -156,7 +158,7 @@ async def fit_gap(
 
 
 async def fit_all(
-    project_id: str, gaps: list[dict], decisions: list[dict], transcript: dict
+    job_id: str, project_id: str, gaps: list[dict], decisions: list[dict], transcript: dict
 ) -> dict:
     by_id = {g["id"]: g for g in gaps}
     facts_by_id = {
@@ -169,7 +171,13 @@ async def fit_all(
         if gap is None or not facts:
             continue
         logger.info("fitting %s (%.2fs available)", gap_id, gap["duration"])
-        results.append(await fit_gap(project_id, gap, facts, transcript))
+        state.publish(
+            job_id,
+            {"type": "gap-start", "gapId": gap_id, "available": gap["duration"], "facts": facts},
+        )
+        result = await fit_gap(job_id, project_id, gap, facts, transcript)
+        state.publish(job_id, {"type": "gap-done", "gapId": gap_id, **{k: v for k, v in result.items() if k != "attempts"}})
+        results.append(result)
 
     committed = [r for r in results if r["status"] == "committed"]
     first_pass = [r for r in committed if r["firstPass"]]

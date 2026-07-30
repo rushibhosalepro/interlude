@@ -4,15 +4,21 @@ Run as a subprocess, never as a library. PyAV bundles its own unsigned ffmpeg
 DLLs and Smart App Control blocks those; the standalone binary is unsigned too
 but passes, because SAC judges on reputation rather than signature alone.
 
-Always asyncio.create_subprocess_exec, never subprocess.run: a blocking call
-here freezes the event loop, and with it the worker and the progress stream,
-for the entire encode.
+Run on a worker thread, never on the event loop directly. A plain subprocess.run
+here would freeze the loop, and with it the worker and the progress stream, for
+the entire encode.
+
+asyncio.create_subprocess_exec would be the obvious choice, but it raises
+NotImplementedError on Windows under a SelectorEventLoop, which is what uvicorn
+runs. TestClient uses asyncio.run and gets a ProactorEventLoop, so that failure
+only shows up under the real server. asyncio.to_thread works on either.
 """
 
 import asyncio
 import logging
 import os
 import shutil
+import subprocess
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -44,24 +50,28 @@ def _find(name: str) -> str:
     )
 
 
+def _run_blocking(executable: str, args: list[str]) -> subprocess.CompletedProcess:
+    return subprocess.run(
+        [executable, *args],
+        capture_output=True,
+        # no shell, so a filename with spaces or quotes cannot become an argument
+        shell=False,
+    )
+
+
 async def run(args: list[str], *, binary: str = "ffmpeg") -> str:
-    """Run ffmpeg/ffprobe. Returns stdout, raises with stderr on failure."""
+    """Run ffmpeg/ffprobe on a thread. Returns stdout, raises with stderr."""
     executable = _find(binary)
 
-    process = await asyncio.create_subprocess_exec(
-        executable,
-        *args,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await process.communicate()
+    result = await asyncio.to_thread(_run_blocking, executable, args)
 
-    if process.returncode != 0:
+    if result.returncode != 0:
         raise FfmpegError(
-            f"{binary} exited {process.returncode}: {stderr.decode(errors='replace')[-600:]}"
+            f"{binary} exited {result.returncode}: "
+            f"{result.stderr.decode(errors='replace')[-600:]}"
         )
 
-    return stdout.decode(errors="replace")
+    return result.stdout.decode(errors="replace")
 
 
 async def duration(path: str) -> float:

@@ -1,16 +1,19 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from botocore.exceptions import BotoCoreError, ClientError
 from dotenv import load_dotenv
 from pathlib import PurePosixPath
 from pydantic import BaseModel
+from sse_starlette.sse import EventSourceResponse
 from uuid import uuid4
 import asyncio
+import json
 import logging
 import os
 import re
 import boto3
 
 import worker
+from worker import state
 
 logger = logging.getLogger(__name__)
 
@@ -208,8 +211,47 @@ async def complete_upload(payload: CompleteUploadRequest):
 
 @router.get("/jobs/{job_id}")
 async def get_job(job_id: str):
-    """Poll a job's progress. Replaced by SSE once the timeline UI lands."""
+    """One-shot progress read. The browser uses the SSE stream below instead."""
     job = await worker.get_status(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+@router.get("/jobs/{job_id}/events")
+async def job_events(job_id: str, request: Request):
+    """Live progress stream: stage changes, and every fit attempt as it happens."""
+    job = await worker.get_status(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+
+    queue = state.subscribe(job_id)
+
+    async def stream():
+        try:
+            # current state first, so a browser joining late is not left blank
+            yield {"event": "state", "data": json.dumps(job)}
+
+            if job.get("status") in {"done", "failed"}:
+                yield {"event": "end", "data": json.dumps({"status": job["status"]})}
+                return
+
+            while not await request.is_disconnected():
+                try:
+                    event = await asyncio.wait_for(queue.get(), timeout=15)
+                except asyncio.TimeoutError:
+                    # keeps proxies from closing an idle connection
+                    yield {"event": "ping", "data": "{}"}
+                    continue
+
+                yield {"event": event["type"], "data": json.dumps(event)}
+
+                if event["type"] == "state":
+                    status = event["state"].get("status")
+                    if status in {"done", "failed"}:
+                        yield {"event": "end", "data": json.dumps({"status": status})}
+                        return
+        finally:
+            state.unsubscribe(job_id, queue)
+
+    return EventSourceResponse(stream())

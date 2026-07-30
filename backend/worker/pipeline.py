@@ -110,7 +110,7 @@ async def stage_describe(job: dict, workdir: Path) -> None:
     )
 
     result = await fit.fit_all(
-        job["projectId"], gap_data["gaps"], decisions["decisions"], transcript
+        job["jobId"], job["projectId"], gap_data["gaps"], decisions["decisions"], transcript
     )
 
     logger.info(
