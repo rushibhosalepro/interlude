@@ -42,9 +42,10 @@ async def transcribe(video_path: str) -> dict:
 
     if size > MAX_UPLOAD_BYTES:
         raise TranscriptionError(
-            f"{path.name} is {size / 1_048_576:.0f} MB, over the "
-            f"{MAX_UPLOAD_BYTES // 1_048_576} MB limit. Extract and compress the "
-            "audio first, which needs ffmpeg."
+            f"{path.name} is {size / 1_048_576:.0f} MB, over Groq's "
+            f"{MAX_UPLOAD_BYTES // 1_048_576} MB limit. The pipeline sends "
+            "extracted audio rather than video, so hitting this means either a "
+            "very long recording or an extraction that did not run."
         )
 
     logger.info("transcribing %s (%.1f MB) with %s", path.name, size / 1_048_576, MODEL)

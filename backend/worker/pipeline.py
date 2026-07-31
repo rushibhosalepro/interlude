@@ -75,7 +75,18 @@ async def stage_transcribe(job: dict, workdir: Path) -> None:
             "processing. Trim it, or use one of the sample clips."
         )
 
-    result = await transcribe.transcribe(str(video))
+    # Send audio, not video. Groq caps uploads at 25 MB and a 720p clip blows
+    # past that in a couple of minutes, while its audio is a rounding error:
+    # measured 4.8 MB of video down to 449 KB. Nothing about the transcript
+    # changes, and the size ceiling stops being a practical limit.
+    audio = await ffmpeg.extract_audio(str(video), str(workdir / "audio.mp3"))
+    logger.info(
+        "extracted audio: %.1f MB video -> %.1f MB audio",
+        video.stat().st_size / 1_048_576,
+        Path(audio).stat().st_size / 1_048_576,
+    )
+
+    result = await transcribe.transcribe(audio)
     logger.info(
         "transcribed %.1fs of audio, %d words", result["duration"], len(result["words"])
     )
