@@ -130,7 +130,7 @@ To shrink a clip automatically, add `--fit`:
 
 ```bash
 cd backend
-./.venv/Scripts/python.exe scripts/seed_samples.py "C:\path	o\lecture.mp4" --id lecture --seconds 240 --fit
+./.venv/Scripts/python.exe scripts/seed_samples.py "D:/videos/lecture.mp4" --id lecture --seconds 240 --fit
 ```
 
 That drops it to 854 pixels wide and picks a bitrate that fits. The vision model
