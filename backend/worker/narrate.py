@@ -56,6 +56,40 @@ class NarrationError(RuntimeError):
     pass
 
 
+def _explain_step_failure(summary: str | None, voice: str) -> str:
+    """Turn the SDK's raw failure into something that says what to change.
+
+    genblaze surfaces the provider error with the HTTP headers attached and the
+    body truncated, so the actual reason is usually cut off. The direct path has
+    always explained these; this keeps the two paths saying the same thing.
+    """
+    raw = summary or "no error detail"
+    lowered = raw.lower()
+
+    if "402" in raw or "payment" in lowered:
+        return (
+            f"ElevenLabs refused voice {voice} with 402. On a free account that "
+            "almost always means it is a voice *library* voice, which needs a paid "
+            f"plan to use through the API. Set ELEVENLABS_VOICE_ID to a premade "
+            f"voice such as {DEFAULT_VOICE} (Adam), or remove the line and the "
+            "default is used. Original error: " + raw[:200]
+        )
+
+    if "401" in raw or "unauthorized" in lowered:
+        return (
+            "ElevenLabs rejected the API key. Check ELEVENLABS_API_KEY, and that "
+            "it carries the text_to_speech permission. Original error: " + raw[:200]
+        )
+
+    if "429" in raw or "quota" in lowered or "limit" in lowered:
+        return (
+            "ElevenLabs is rate limiting or the character allowance is spent. "
+            "Original error: " + raw[:200]
+        )
+
+    return f"genblaze tts step failed: {raw[:400]}"
+
+
 class _CountingCache:
     """StepCache that records hits and misses, which the SDK does not expose."""
 
@@ -201,7 +235,7 @@ async def _narrate_via_genblaze(text: str, voice: str) -> bytes:
     # succeeded_steps/error_summary are methods on PipelineResult, not properties
     succeeded = result.succeeded_steps()
     if not succeeded:
-        raise NarrationError(f"genblaze tts step failed: {result.error_summary()}")
+        raise NarrationError(_explain_step_failure(result.error_summary(), voice))
 
     step = succeeded[0]
     assets = list(step.assets or [])
