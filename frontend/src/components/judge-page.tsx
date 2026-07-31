@@ -21,8 +21,19 @@ function Player({ project }: { project: Project }) {
   const [t, setT] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [described, setDescribed] = useState(true);
+  const [loadedDuration, setLoadedDuration] = useState(0);
 
-  const duration = project.durationSeconds || 1;
+  // Two real files, not one file muted. The described cut is the deliverable;
+  // the original is the untouched upload, so the A/B is an actual comparison.
+  const src = described ? project.videoUrl : project.originalUrl;
+
+  // where playback was when the source was swapped, restored once the new file
+  // has metadata, so switching does not send the judge back to zero
+  const restoreRef = useRef<{ at: number; playing: boolean } | null>(null);
+
+  // transcript duration is authoritative, but fall back to the file's own so a
+  // null never collapses the scrubber and throws every gap band off it
+  const duration = project.durationSeconds || loadedDuration || 1;
   const narratedGaps = project.gaps.filter((g) => g.narrated);
 
   // which narrated gap, if any, is playing right now
@@ -34,13 +45,29 @@ function Player({ project }: { project: Project }) {
     ? project.descriptions.find((d) => d.gapId === current.gapId)?.text
     : undefined;
 
-  // Original and Described are the same file; muting the described track is a
-  // stand-in until the original audio is served separately, and it deliberately
-  // does not restart playback.
+  const switchTo = (next: boolean) => {
+    if (next === described) return;
+    const video = videoRef.current;
+    if (video) restoreRef.current = { at: video.currentTime, playing: !video.paused };
+    setDescribed(next);
+  };
+
+  // React swaps the src on the next render; put playback back where it was once
+  // the new file reports metadata
   useEffect(() => {
     const video = videoRef.current;
-    if (video) video.muted = !described;
-  }, [described]);
+    const restore = restoreRef.current;
+    if (!video || !restore) return;
+
+    const onLoaded = () => {
+      video.currentTime = restore.at;
+      if (restore.playing) video.play().catch(() => {});
+      restoreRef.current = null;
+    };
+
+    video.addEventListener("loadedmetadata", onLoaded, { once: true });
+    return () => video.removeEventListener("loadedmetadata", onLoaded);
+  }, [src]);
 
   const toggle = () => {
     const video = videoRef.current;
@@ -71,10 +98,12 @@ function Player({ project }: { project: Project }) {
       >
         <video
           ref={videoRef}
-          src={project.videoUrl}
-          preload="metadata"
+          src={src}
+          // the hero should not buffer while a judge watches
+          preload="auto"
           playsInline
           onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
+          onLoadedMetadata={(e) => setLoadedDuration(e.currentTarget.duration || 0)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
@@ -113,7 +142,7 @@ function Player({ project }: { project: Project }) {
             >
               {described
                 ? currentText
-                : "Nothing is spoken here, and the audio carries none of what is on screen."}
+                : "The lecturer is silent here, and the original audio carries none of what is on screen."}
             </div>
           </div>
         )}
@@ -206,7 +235,7 @@ function Player({ project }: { project: Project }) {
             return (
               <div
                 key={label}
-                onClick={() => setDescribed(label === "Described")}
+                onClick={() => switchTo(label === "Described")}
                 style={{
                   padding: "7px 14px",
                   borderRadius: 999,
@@ -224,8 +253,7 @@ function Player({ project }: { project: Project }) {
         </div>
 
         <a
-          href={project.videoUrl}
-          download
+          href={project.downloadUrl}
           style={{
             padding: "11px 15px",
             border: "1px solid #26262a",
@@ -315,6 +343,17 @@ export function JudgePage({
   project: Project;
   actions?: React.ReactNode;
 }) {
+  // the design is drawn at 1180px. below that the side by side layout squeezes
+  // the player, so stack instead.
+  const [wide, setWide] = useState(
+    typeof window === "undefined" ? true : window.innerWidth >= 1100,
+  );
+  useEffect(() => {
+    const onResize = () => setWide(window.innerWidth >= 1100);
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+  const cols = wide ? "minmax(0,1.6fr) minmax(0,1fr)" : "minmax(0,1fr)";
   const m = project.metrics;
   const skipped = m.gapsFound - m.toFill;
 
@@ -398,7 +437,7 @@ export function JudgePage({
         <div
           style={{
             display: "grid",
-            gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)",
+            gridTemplateColumns: cols,
             gap: 26,
             marginTop: 30,
             alignItems: "start",
@@ -413,8 +452,13 @@ export function JudgePage({
               color={AMBER}
             />
             <StatCard
-              value="0"
-              label="words spoken over the lecturer"
+              value={String(m.overruns)}
+              label={
+                m.overruns === 0
+                  ? "descriptions that ran over their silence"
+                  : "descriptions that ran over their silence, spoken across the lecturer"
+              }
+              color={m.overruns === 0 ? INK : RED}
             />
             <StatCard
               value={`${Math.round(project.coverage.after * 100)}%`}
@@ -430,7 +474,7 @@ export function JudgePage({
             <div
               style={{
                 display: "grid",
-                gridTemplateColumns: "minmax(0,1.6fr) minmax(0,1fr)",
+                gridTemplateColumns: cols,
                 gap: 26,
                 alignItems: "start",
               }}
@@ -605,7 +649,7 @@ export function JudgePage({
           <div
             style={{
               display: "grid",
-              gridTemplateColumns: "repeat(4,minmax(0,1fr))",
+              gridTemplateColumns: wide ? "repeat(4,minmax(0,1fr))" : "repeat(2,minmax(0,1fr))",
               gap: 1,
               background: "#16161a",
             }}
@@ -641,7 +685,10 @@ export function JudgePage({
                   : "—",
                 size: 16,
                 color: GREEN,
-                note: "retention set at write time",
+                note:
+                  project.provenance.lockMode === "COMPLIANCE"
+                    ? "compliance mode, not removable by anyone"
+                    : "governance mode, removable with a bypass key",
               },
             ].map((p) => (
               <div key={p.label} style={{ background: "#0d0d0f", padding: "17px 18px" }}>
@@ -687,8 +734,10 @@ export function JudgePage({
             }}
           >
             Every description traces back to the model call that produced it: prompt,
-            parameters, voice, timing. Written once to a bucket with Object Lock on, so
-            the record cannot be edited afterwards, including by us.
+            parameters, voice, timing. Written once to a bucket with Object Lock on.{" "}
+            {project.provenance.lockMode === "COMPLIANCE"
+              ? "In compliance mode, so it cannot be deleted or altered before the retention date by anyone, including us."
+              : "In governance mode, so it is immutable to ordinary access, though a key holding the bypass permission could still remove it."}
           </div>
         </div>
 

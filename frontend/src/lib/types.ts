@@ -33,6 +33,8 @@ export type Project = {
   videoId: string;
   durationSeconds: number | null;
   videoUrl: string;
+  originalUrl: string;
+  downloadUrl: string;
   audioUrl: string;
   vttUrl: string;
   gaps: Gap[];
@@ -51,6 +53,7 @@ export type Project = {
     firstPassFitRate: number;
     finalFitRate: number;
     totalAttempts: number;
+    overruns: number;
   };
   descriptions: Description[];
   provenance: {
@@ -59,5 +62,6 @@ export type Project = {
     canonicalHash: string | null;
     steps: number | null;
     retainUntil: string | null;
+    lockMode: string;
   };
 };

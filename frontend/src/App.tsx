@@ -12,8 +12,8 @@ export function App() {
   // a run started from this page, whether uploaded or a sample
   const [jobId, setJobId] = useState<string | null>(null);
 
-  // newest finished run is the one a judge should land on
-  const featured = projects?.[projects.length - 1];
+  // the API sorts newest first, on when the manifest was written
+  const featured = projects?.[0];
 
   const runPanel = (
     <div

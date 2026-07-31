@@ -40,6 +40,15 @@ logger = logging.getLogger(__name__)
 # how long the record is locked against modification, including by us
 RETENTION_DAYS = int(os.getenv("COMPLIANCE_RETENTION_DAYS", "30"))
 
+# GOVERNANCE is bypassable by any key holding s3:BypassGovernanceRetention, so
+# "nobody can delete this, including us" is only true under COMPLIANCE. The mode
+# is recorded in the receipt and the UI states whichever one was actually used,
+# rather than claiming the stronger one.
+#
+# COMPLIANCE is genuinely irreversible for the whole retention period: not even
+# the account root can remove the object. Set it deliberately.
+LOCK_MODE = os.getenv("COMPLIANCE_LOCK_MODE", "GOVERNANCE").upper()
+
 
 def _sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
@@ -201,7 +210,9 @@ async def publish(job: dict) -> dict:
     manifest = Manifest.from_run(run)
 
     stamped = datetime.now(timezone.utc)
-    lock = ObjectLockConfig(retain_until=stamped + timedelta(days=RETENTION_DAYS))
+    lock = ObjectLockConfig(
+        retain_until=stamped + timedelta(days=RETENTION_DAYS), mode=LOCK_MODE
+    )
 
     # The SDK writes the manifest, not boto3. A second sink is needed because
     # ObjectStorageSink has a single backend: the narration sink points at the
@@ -217,8 +228,9 @@ async def publish(job: dict) -> dict:
     await asyncio.to_thread(sink.write_run, run, manifest)
 
     logger.info(
-        "manifest %s locked until %s (%d steps, hash %s)",
+        "manifest %s locked %s until %s (%d steps, hash %s)",
         key,
+        LOCK_MODE,
         lock.retain_until.date(),
         len(run.steps),
         manifest.canonical_hash[:16],
@@ -230,5 +242,6 @@ async def publish(job: dict) -> dict:
         "canonicalHash": manifest.canonical_hash,
         "steps": len(run.steps),
         "retainUntil": lock.retain_until.isoformat(),
+        "lockMode": LOCK_MODE,
         "runId": run.run_id,
     }

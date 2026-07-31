@@ -29,23 +29,37 @@ MANIFEST_KEY = re.compile(
 )
 
 
-def _presign_get(key: str) -> str:
+def _presign_get(key: str, download_as: str | None = None) -> str:
+    params = {"Bucket": storage.media_bucket, "Key": key}
+    if download_as:
+        # the HTML download attribute is ignored cross origin, so the header has
+        # to come from the signed URL or clicking it just navigates to the video
+        params["ResponseContentDisposition"] = (
+            f'attachment; filename="{download_as}"'
+        )
     return storage.client.generate_presigned_url(
-        "get_object",
-        Params={"Bucket": storage.media_bucket, "Key": key},
-        ExpiresIn=PLAYBACK_URL_TTL,
+        "get_object", Params=params, ExpiresIn=PLAYBACK_URL_TTL
     )
 
 
 def _list_finished() -> list[tuple[str, str]]:
+    """Finished runs, newest first.
+
+    B2 lists lexicographically by key, and project ids are random hex, so the
+    listing order is meaningless. Sort on when the manifest receipt was written,
+    which is the moment the run actually finished.
+    """
     paginator = storage.client.get_paginator("list_objects_v2")
     found = []
     for page in paginator.paginate(Bucket=storage.media_bucket, Prefix="projects/"):
         for entry in page.get("Contents", []):
             match = MANIFEST_KEY.match(entry["Key"])
             if match:
-                found.append((match["projectId"], match["videoId"]))
-    return found
+                found.append(
+                    (entry["LastModified"], match["projectId"], match["videoId"])
+                )
+    found.sort(key=lambda row: row[0], reverse=True)
+    return [(project_id, video_id) for _, project_id, video_id in found]
 
 
 def _load_project(project_id: str, video_id: str) -> dict | None:
@@ -84,6 +98,11 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
         "durationSeconds": (transcript or {}).get("duration"),
         "language": (transcript or {}).get("language"),
         "videoUrl": _presign_get(f"{final}/described.mp4"),
+        # the untouched upload, so Original vs Described is a real comparison
+        "originalUrl": _presign_get(f"{base}/source/{video_id}.mp4"),
+        "downloadUrl": _presign_get(
+            f"{final}/described.mp4", download_as=f"described-{video_id[:8]}.mp4"
+        ),
         "audioUrl": _presign_get(f"{final}/described-audio.m4a"),
         "vttUrl": _presign_get(f"{final}/descriptions.vtt"),
         "sourceUrl": _presign_get(f"{base}/source/{video_id}.mp4"),
@@ -97,6 +116,14 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
             "firstPassFitRate": descriptions.get("firstPassFitRate", 0),
             "finalFitRate": descriptions.get("finalFitRate", 0),
             "totalAttempts": descriptions.get("totalAttempts", 0),
+            # narration that ran past its gap would be spoken over the lecturer.
+            # should be zero by construction, but report it rather than assert it.
+            "overruns": sum(
+                1
+                for r in committed
+                if r["gapId"] in gaps_by_id
+                and r["durationSeconds"] > gaps_by_id[r["gapId"]]["duration"]
+            ),
         },
         # every gap, narrated or not, so the scrubber can band them
         "gaps": [
@@ -148,6 +175,7 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
             "canonicalHash": receipt.get("canonicalHash"),
             "steps": receipt.get("steps"),
             "retainUntil": receipt.get("retainUntil"),
+            "lockMode": receipt.get("lockMode", "GOVERNANCE"),
         },
     }
 
