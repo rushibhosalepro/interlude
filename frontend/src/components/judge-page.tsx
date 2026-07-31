@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import axios from "axios";
 
+import { LeftSilent } from "@/components/left-silent";
 import type { Project } from "@/lib/types";
 
 const API_URL = process.env.BUN_PUBLIC_API_URL;
@@ -83,8 +84,70 @@ function Player({ project }: { project: Project }) {
     if (videoRef.current) videoRef.current.currentTime = next;
   };
 
+  const modeSwitch = (big: boolean) => (
+    <div
+      style={{
+        display: "flex",
+        gap: 5,
+        padding: 4,
+        background: "#141417",
+        borderRadius: 999,
+        flex: "none",
+      }}
+    >
+      {(["Original", "Described"] as const).map((label) => {
+        const active = (label === "Described") === described;
+        return (
+          <div
+            key={label}
+            onClick={() => switchTo(label === "Described")}
+            style={{
+              padding: big ? "9px 20px" : "7px 14px",
+              borderRadius: 999,
+              fontSize: big ? 13.5 : 12,
+              fontWeight: 500,
+              cursor: "pointer",
+              background: active ? INK : "transparent",
+              color: active ? "#0a0a0b" : "#8d8a85",
+            }}
+          >
+            {label}
+          </div>
+        );
+      })}
+    </div>
+  );
+
   return (
     <div>
+      {/* The A/B is the whole argument in one click, so it leads rather than
+          sitting as a small pill among the transport controls. */}
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 14,
+          marginBottom: 12,
+          flexWrap: "wrap",
+        }}
+      >
+        {modeSwitch(true)}
+        <div style={{ fontSize: 13, color: "#9a968f", lineHeight: 1.4 }}>
+          {described ? (
+            <>
+              Switch to <strong style={{ color: INK }}>Original</strong> to hear what
+              a blind student gets today.
+            </>
+          ) : (
+            <>
+              This is the lecture as it ships. Switch back to{" "}
+              <strong style={{ color: INK }}>Described</strong> for the same moment,
+              narrated.
+            </>
+          )}
+        </div>
+      </div>
+
       <div
         style={{
           position: "relative",
@@ -218,38 +281,6 @@ function Player({ project }: { project: Project }) {
               background: INK,
             }}
           />
-        </div>
-
-        <div
-          style={{
-            display: "flex",
-            gap: 5,
-            padding: 4,
-            background: "#141417",
-            borderRadius: 999,
-            flex: "none",
-          }}
-        >
-          {(["Original", "Described"] as const).map((label) => {
-            const active = (label === "Described") === described;
-            return (
-              <div
-                key={label}
-                onClick={() => switchTo(label === "Described")}
-                style={{
-                  padding: "7px 14px",
-                  borderRadius: 999,
-                  fontSize: 12,
-                  fontWeight: 500,
-                  cursor: "pointer",
-                  background: active ? INK : "transparent",
-                  color: active ? "#0a0a0b" : "#8d8a85",
-                }}
-              >
-                {label}
-              </div>
-            );
-          })}
         </div>
 
         <a
@@ -631,6 +662,8 @@ export function JudgePage({
                     did not write the descriptions it is grading.
                   </div>
                 </div>
+
+                <LeftSilent project={project} />
 
                 {actions}
               </div>

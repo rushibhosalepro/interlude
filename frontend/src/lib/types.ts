@@ -28,6 +28,13 @@ export type Gap = {
   narrated: boolean;
 };
 
+export type SkippedGap = {
+  gapId: string;
+  reason: string;
+  startsAt: number;
+  durationSeconds: number;
+};
+
 export type Project = {
   projectId: string;
   videoId: string;
@@ -38,6 +45,7 @@ export type Project = {
   audioUrl: string;
   vttUrl: string;
   gaps: Gap[];
+  skipped: SkippedGap[];
   coverage: {
     before: number;
     after: number;

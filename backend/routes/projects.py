@@ -190,6 +190,20 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
             }
             for g in gaps["gaps"]
         ],
+        # The silences it chose NOT to narrate, with the model's reason. This is
+        # the restraint claim as evidence rather than assertion: over-narration is
+        # the classic failure of bad audio description, and the page can only
+        # argue that by showing what was deliberately left alone.
+        "skipped": [
+            {
+                "gapId": d["gapId"],
+                "reason": d["reason"],
+                "startsAt": gaps_by_id[d["gapId"]]["start"],
+                "durationSeconds": gaps_by_id[d["gapId"]]["duration"],
+            }
+            for d in decisions["decisions"]
+            if d.get("action") == "skip" and d["gapId"] in gaps_by_id
+        ],
         "coverage": {
             "before": (coverage or {}).get("coverageBefore", 0),
             "after": (coverage or {}).get("coverageAfter", 0),
