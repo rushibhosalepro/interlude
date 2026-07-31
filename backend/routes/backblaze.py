@@ -230,7 +230,10 @@ async def job_events(job_id: str, request: Request):
     async def stream():
         try:
             # current state first, so a browser joining late is not left blank
-            yield {"event": "state", "data": json.dumps(job)}
+            # same envelope as the streamed events below. sending the job bare
+            # here gave one event name two shapes, and the client crashed on the
+            # very first message of every stream.
+            yield {"event": "state", "data": json.dumps({"type": "state", "state": job})}
 
             if job.get("status") in {"done", "failed"}:
                 yield {"event": "end", "data": json.dumps({"status": job["status"]})}

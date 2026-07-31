@@ -51,7 +51,11 @@ export function JobTimeline({
     sourceRef.current = source;
 
     source.addEventListener("state", (e) => {
-      const { state } = JSON.parse((e as MessageEvent).data);
+      const payload = JSON.parse((e as MessageEvent).data);
+      // tolerate both shapes: the envelope, and a bare job from an older server
+      const state = payload?.state ?? payload;
+      if (!state?.status) return;
+
       setStatus(state.status);
       setStage(state.stage);
       setCompleted(state.completedStages ?? []);
