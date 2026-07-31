@@ -300,6 +300,11 @@ async def stage_publish(job: dict, workdir: Path) -> None:
         storage.put_json, artifact_key(job, "final/{videoId}/manifest.json"), receipt
     )
 
+    # keep the index current so the landing page never has to walk the bucket
+    from routes.projects import add_to_index
+
+    await asyncio.to_thread(add_to_index, job["projectId"], job["videoId"])
+
 
 # in order, the full pipeline from ARCHITECTURE.md.
 STAGES = [

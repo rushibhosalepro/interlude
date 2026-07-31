@@ -8,6 +8,7 @@ from routes.backblaze import router as backblaze_router
 from routes.projects import router as projects_router
 from routes.samples import router as samples_router
 
+import asyncio
 import logging
 import os
 import uvicorn
@@ -23,7 +24,24 @@ async def lifespan(app: FastAPI):
     # one background worker for the whole process. do NOT run uvicorn with
     # --workers > 1: each process would get its own private queue.
     worker.start()
+
+    # The landing page is the first thing a judge sees, and building its payload
+    # costs a few seconds of B2 round trips. Warm it in the background at boot so
+    # nobody waits for it, rather than making the first visitor pay.
+    async def warm() -> None:
+        try:
+            from routes.projects import list_projects
+
+            await list_projects(refresh=True)
+            logging.getLogger(__name__).info("landing page payload warmed")
+        except Exception:
+            logging.getLogger(__name__).warning("could not warm the landing page", exc_info=True)
+
+    warming = asyncio.create_task(warm())
+
     yield
+
+    warming.cancel()
     await worker.stop()
 
 

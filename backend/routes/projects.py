@@ -42,12 +42,19 @@ def _presign_get(key: str, download_as: str | None = None) -> str:
     )
 
 
-def _list_finished() -> list[tuple[str, str]]:
-    """Finished runs, newest first.
+INDEX_KEY = "index/projects.json"
+
+
+def _scan_finished() -> list[tuple[str, str]]:
+    """Finished runs, newest first, by scanning the bucket.
 
     B2 lists lexicographically by key, and project ids are random hex, so the
     listing order is meaningless. Sort on when the manifest receipt was written,
     which is the moment the run actually finished.
+
+    This walks every object under projects/, which is hundreds of attempt files,
+    and measured 6.3s on a bucket with nine runs. It is the fallback, not the
+    normal path: see _list_finished.
     """
     paginator = storage.client.get_paginator("list_objects_v2")
     found = []
@@ -62,11 +69,57 @@ def _list_finished() -> list[tuple[str, str]]:
     return [(project_id, video_id) for _, project_id, video_id in found]
 
 
+def _list_finished() -> list[tuple[str, str]]:
+    """Finished runs, newest first, from the index the publish stage maintains.
+
+    One GET instead of walking the bucket. Falls back to a scan if the index is
+    missing or unreadable, and rebuilds it so the next request is fast again.
+    """
+    index = storage.get_json(INDEX_KEY)
+    entries = (index or {}).get("projects")
+
+    if entries:
+        return [(e["projectId"], e["videoId"]) for e in entries]
+
+    logger.info("project index missing, scanning the bucket to rebuild it")
+    found = _scan_finished()
+    rebuild_index(found)
+    return found
+
+
+def rebuild_index(found: list[tuple[str, str]]) -> None:
+    storage.put_json(
+        INDEX_KEY,
+        {
+            "projects": [
+                {"projectId": project_id, "videoId": video_id}
+                for project_id, video_id in found
+            ]
+        },
+    )
+
+
+def add_to_index(project_id: str, video_id: str) -> None:
+    """Put a newly finished run at the front. Called by the publish stage."""
+    index = storage.get_json(INDEX_KEY) or {"projects": []}
+    entries = [
+        e
+        for e in index.get("projects", [])
+        if not (e["projectId"] == project_id and e["videoId"] == video_id)
+    ]
+    entries.insert(0, {"projectId": project_id, "videoId": video_id})
+    storage.put_json(INDEX_KEY, {"projects": entries})
+    invalidate_cache()
+
+
 def _load_project(project_id: str, video_id: str) -> dict | None:
     base = f"projects/{project_id}"
     analysis = f"{base}/analysis/{video_id}"
     final = f"{base}/final/{video_id}"
 
+    # Sequential on purpose. Fetching these six concurrently measured 14.9s
+    # against 0.5s for a single read: six simultaneous TLS handshakes to B2
+    # contend far worse than they parallelise. Serial is ~3s.
     descriptions = storage.get_json(f"{analysis}/descriptions.json")
     decisions = storage.get_json(f"{analysis}/decisions.json")
     gaps = storage.get_json(f"{analysis}/gaps.json")
@@ -192,7 +245,7 @@ def invalidate_cache() -> None:
 
 
 @router.get("/projects")
-async def list_projects(limit: int = 12, refresh: bool = False):
+async def list_projects(limit: int = 1, refresh: bool = False):
     """Finished runs, newest last. Each carries playable URLs and its metrics."""
     now = time.monotonic()
     if not refresh and _cache["payload"] and now - _cache["at"] < CACHE_TTL:
@@ -200,22 +253,12 @@ async def list_projects(limit: int = 12, refresh: bool = False):
 
     finished = await asyncio.to_thread(_list_finished)
 
-    # one B2 round trip per artifact, so load the projects concurrently
-    loaded = await asyncio.gather(
-        *(
-            asyncio.to_thread(_load_project, project_id, video_id)
-            for project_id, video_id in finished[-limit:]
-        ),
-        return_exceptions=True,
-    )
+    def _load_all() -> list:
+        return [_load_project(pid, vid) for pid, vid in finished[:limit]]
 
-    projects = []
-    for item in loaded:
-        if isinstance(item, Exception):
-            logger.warning("skipping unreadable project: %s", item)
-            continue
-        if item:
-            projects.append(item)
+    loaded = await asyncio.to_thread(_load_all)
+
+    projects = [item for item in loaded if item]
 
     payload = {"projects": projects, "count": len(projects)}
     _cache["at"], _cache["payload"] = now, payload
