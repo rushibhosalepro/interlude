@@ -676,7 +676,9 @@ export function JudgePage({
                 value: `b2://${project.provenance.bucket ?? "—"}`,
                 size: 12,
                 color: "#c9c5be",
-                note: "Object Lock on, governance mode",
+                // the mode is stated once, by the LOCKED UNTIL card. saying it
+                // here too would let the two cards contradict each other.
+                note: "Object Lock on, write once",
               },
               {
                 label: "LOCKED UNTIL",
