@@ -20,6 +20,12 @@ import storage  # noqa: E402
 
 MAX_SECONDS = float(os.getenv("MAX_CLIP_SECONDS", "90"))
 
+# The analyse stage inlines the video to Gemini, which caps around 18 MB. That
+# is a size limit, not a length limit: a long clip is fine if it is encoded
+# small enough. The vision model does not need 720p to see someone draw.
+ANALYSE_LIMIT_MB = 18
+TARGET_MB = 16  # leave headroom, base64 inflates the request
+
 
 def _ffmpeg(name: str) -> str:
     from shutil import which
@@ -51,6 +57,9 @@ def main() -> None:
                         help=f"trim length, default {MAX_SECONDS:g}")
     parser.add_argument("--start", type=float, default=0.0,
                         help="seconds into the source to start the trim")
+    parser.add_argument("--fit", action="store_true",
+                        help=f"re-encode to stay under {TARGET_MB} MB so the "
+                             "analyse stage can inline it")
     args = parser.parse_args()
 
     with tempfile.TemporaryDirectory(prefix="interlude-sample-") as tmp:
@@ -82,6 +91,28 @@ def main() -> None:
             print(f"trimmed {original:.1f}s -> {duration(local):.1f}s")
         else:
             print(f"{original:.1f}s, already within the {target:g}s cap")
+
+        size_mb = local.stat().st_size / 1_048_576
+        if args.fit and size_mb > TARGET_MB:
+            secs = duration(local)
+            # total budget across video+audio, minus a little for the container
+            kbps = int((TARGET_MB * 8 * 1024) / secs) - 64
+            if kbps < 120:
+                print(f"WARNING: {secs:.0f}s needs {kbps} kbps to fit, which will "
+                      "look poor. Trim it shorter instead.")
+            fitted = workdir / "fitted.mp4"
+            subprocess.run(
+                [_ffmpeg("ffmpeg"), "-v", "error", "-y", "-i", str(local),
+                 "-vf", "scale='min(854,iw)':-2",
+                 "-b:v", f"{kbps}k", "-maxrate", f"{int(kbps*1.3)}k",
+                 "-bufsize", f"{kbps*2}k",
+                 "-c:v", "libx264", "-preset", "veryfast",
+                 "-c:a", "aac", "-b:a", "64k", str(fitted)],
+                check=True,
+            )
+            local = fitted
+            print(f"compressed {size_mb:.1f} MB -> "
+                  f"{local.stat().st_size / 1_048_576:.1f} MB at {kbps} kbps")
 
         key = f"samples/{args.id}.mp4"
         storage.client.put_object(
