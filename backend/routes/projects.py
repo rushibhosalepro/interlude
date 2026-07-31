@@ -57,6 +57,7 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
     decisions = storage.get_json(f"{analysis}/decisions.json")
     gaps = storage.get_json(f"{analysis}/gaps.json")
     transcript = storage.get_json(f"{analysis}/transcript.json")
+    coverage = storage.get_json(f"{analysis}/coverage.json")
     receipt = storage.get_json(f"{final}/manifest.json")
 
     if not all([descriptions, decisions, gaps, receipt]):
@@ -64,6 +65,18 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
 
     gaps_by_id = {g["id"]: g for g in gaps["gaps"]}
     committed = [r for r in descriptions["results"] if r["status"] == "committed"]
+    narrated_ids = {r["gapId"] for r in committed}
+
+    # coverage.json records which fact indices were recovered but not their text,
+    # so pair them back up with the facts the analyse stage found
+    all_facts = [
+        fact for d in decisions["decisions"] for fact in (d.get("facts") or [])
+    ]
+    recovered = set((coverage or {}).get("recoveredAfter") or [])
+    fact_list = [
+        {"text": text, "recovered": index in recovered}
+        for index, text in enumerate(all_facts)
+    ]
 
     return {
         "projectId": project_id,
@@ -85,6 +98,24 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
             "finalFitRate": descriptions.get("finalFitRate", 0),
             "totalAttempts": descriptions.get("totalAttempts", 0),
         },
+        # every gap, narrated or not, so the scrubber can band them
+        "gaps": [
+            {
+                "gapId": g["id"],
+                "start": g["start"],
+                "end": g["end"],
+                "duration": g["duration"],
+                "kind": g["kind"],
+                "narrated": g["id"] in narrated_ids,
+            }
+            for g in gaps["gaps"]
+        ],
+        "coverage": {
+            "before": (coverage or {}).get("coverageBefore", 0),
+            "after": (coverage or {}).get("coverageAfter", 0),
+            "checker": (coverage or {}).get("model"),
+            "facts": fact_list,
+        },
         "descriptions": [
             {
                 "gapId": r["gapId"],
@@ -92,8 +123,21 @@ def _load_project(project_id: str, video_id: str) -> dict | None:
                 "startsAt": gaps_by_id[r["gapId"]]["start"],
                 "durationSeconds": r["durationSeconds"],
                 "availableSeconds": gaps_by_id[r["gapId"]]["duration"],
-                "attempts": len(r["attempts"]),
+                "attemptCount": len(r["attempts"]),
                 "firstPass": r["firstPass"],
+                # the full ladder, so the rewrite loop can be shown in line
+                "attempts": [
+                    {
+                        "n": a["attempt"],
+                        "text": a["text"],
+                        "words": a["words"],
+                        "durationSeconds": a["durationSeconds"],
+                        "targetSeconds": a["targetSeconds"],
+                        "fits": a["fits"],
+                        "speed": a.get("speed", 1.0),
+                    }
+                    for a in r["attempts"]
+                ],
             }
             for r in committed
             if r["gapId"] in gaps_by_id

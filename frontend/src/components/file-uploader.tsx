@@ -34,7 +34,13 @@ function formatBytes(bytes: number) {
   return `${value.toFixed(1)} ${units[unit]}`;
 }
 
-export function FileUploader({ onFinished }: { onFinished?: () => void }) {
+export function FileUploader({
+  onFinished,
+  onQueued,
+}: {
+  onFinished?: () => void;
+  onQueued?: (jobId: string) => void;
+}) {
   const [file, setFile] = useState<File | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [progress, setProgress] = useState(0);
@@ -98,6 +104,7 @@ export function FileUploader({ onFinished }: { onFinished?: () => void }) {
       });
 
       setJobId(job.jobId);
+      onQueued?.(job.jobId);
       setStatus("done");
       toast.success("Upload complete", { description: file.name });
     } catch (err) {

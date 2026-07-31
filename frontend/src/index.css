@@ -1,3 +1,4 @@
+@import url("https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap");
 @import "../styles/globals.css";
 
 @layer base {
@@ -5,7 +6,24 @@
     @apply font-sans;
   }
 
+  /* the judge page is dark by design, not theme-driven, so the page chrome is
+     pinned rather than left to the light/dark token */
+  html,
   body {
-    @apply relative m-0 min-h-screen min-w-[320px] bg-background text-foreground;
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    min-width: 320px;
+    background: #070708;
+    color: #f3f1ee;
   }
+
+  * {
+    box-sizing: border-box;
+  }
+}
+
+@keyframes livedot {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
 }
