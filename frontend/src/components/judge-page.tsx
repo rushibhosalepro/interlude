@@ -883,18 +883,27 @@ export function useProjects() {
           // no bundled demos, everything streams from B2 as before
         }
 
-        // Only the described video (the default, most-watched) is bundled
-        // statically. originalUrl keeps streaming from B2, since the Original
-        // toggle is a brief click and the source files are large.
-        const projects: Project[] = (data.projects as Project[]).map((p) =>
+        // Both cuts are cached and compressed. The raw B2 files are ~190MB
+        // (mux copies the source video stream), far too large to stream in a
+        // browser, so a cached id serves the small copies for described,
+        // original and download alike.
+        const mapped: Project[] = (data.projects as Project[]).map((p) =>
           staticIds.includes(p.videoId)
             ? {
                 ...p,
                 videoUrl: `/demos/${p.videoId}.mp4`,
+                originalUrl: `/demos/${p.videoId}.orig.mp4`,
                 downloadUrl: `/demos/${p.videoId}.mp4`,
               }
             : p,
         );
+
+        // Show only the fully-cached demos in the gallery. The raw B2 files are
+        // ~190MB and would hang the player, so a clip that is not cached is not
+        // a good demo. If no manifest is present (local dev) show everything.
+        const projects = staticIds.length
+          ? mapped.filter((p) => staticIds.includes(p.videoId))
+          : mapped;
 
         if (!cancelled) setProjects(projects);
       } catch (err) {
