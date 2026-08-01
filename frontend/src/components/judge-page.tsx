@@ -870,42 +870,8 @@ export function useProjects() {
         const { data } = await axios.get(`${API_URL}/api/projects`, {
           params: key ? { refresh: true } : {},
         });
-
-        // Curated demos are shipped as static files in public/demos, so their
-        // playback is served from the frontend CDN instead of pulling from B2
-        // on every view. scripts/cache_demos.py writes the manifest and files.
-        // Judge-created runs are not listed and keep streaming from B2.
-        let staticIds: string[] = [];
-        try {
-          const m = await axios.get("/demos/manifest.json");
-          staticIds = m.data?.ids ?? [];
-        } catch {
-          // no bundled demos, everything streams from B2 as before
-        }
-
-        // Both cuts are cached and compressed. The raw B2 files are ~190MB
-        // (mux copies the source video stream), far too large to stream in a
-        // browser, so a cached id serves the small copies for described,
-        // original and download alike.
-        const mapped: Project[] = (data.projects as Project[]).map((p) =>
-          staticIds.includes(p.videoId)
-            ? {
-                ...p,
-                videoUrl: `/demos/${p.videoId}.mp4`,
-                originalUrl: `/demos/${p.videoId}.orig.mp4`,
-                downloadUrl: `/demos/${p.videoId}.mp4`,
-              }
-            : p,
-        );
-
-        // Show only the fully-cached demos in the gallery. The raw B2 files are
-        // ~190MB and would hang the player, so a clip that is not cached is not
-        // a good demo. If no manifest is present (local dev) show everything.
-        const projects = staticIds.length
-          ? mapped.filter((p) => staticIds.includes(p.videoId))
-          : mapped;
-
-        if (!cancelled) setProjects(projects);
+        // Everything streams from B2 via the presigned URLs the API returns.
+        if (!cancelled) setProjects(data.projects);
       } catch (err) {
         if (!cancelled)
           setError(err instanceof Error ? err.message : String(err));
