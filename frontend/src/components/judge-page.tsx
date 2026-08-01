@@ -508,8 +508,7 @@ export function JudgePage({
             textWrap: "balance",
           }}
         >
-          You captioned 4,000 lectures. Your blind students still can't follow one of
-          them.
+          You captioned every lecture. Your blind students still can't follow one.
         </h1>
         <p style={{ fontSize: 16.5, color: "#9a968f", marginTop: 16, maxWidth: "44em" }}>
           Interlude finds the silences where the lecturer is drawing instead of

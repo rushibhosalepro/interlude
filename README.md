@@ -2,7 +2,7 @@
 
 **Audio description for lecture video, generated automatically.**
 
-You captioned 4,000 lectures. Your blind students still can't follow one of them.
+You captioned every lecture. Your blind students still can't follow one.
 Captions serve deaf viewers. They do nothing for a blind student, who needs the
 opposite: the things that happen on screen while nobody is speaking. Interlude
 finds those silences, decides which ones actually hide something visual, writes

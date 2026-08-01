@@ -175,8 +175,7 @@ function Pitch({ compact = false }: { compact?: boolean }) {
           textWrap: "balance",
         }}
       >
-        You captioned 4,000 lectures. Your blind students still can't follow one
-        of them.
+        You captioned every lecture. Your blind students still can't follow one.
       </h1>
       <p
         style={{
