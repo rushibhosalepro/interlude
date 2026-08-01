@@ -211,10 +211,17 @@ export function JobTimeline({
       </ol>
 
       {error && (
-        <p className="text-destructive flex items-start gap-2 text-sm">
-          <TriangleAlert className="mt-0.5 size-4 shrink-0" />
-          {error}
-        </p>
+        <div className="flex flex-col gap-1.5">
+          <p className="text-destructive flex items-start gap-2 text-sm">
+            <TriangleAlert className="mt-0.5 size-4 shrink-0" />
+            {error}
+          </p>
+          <p className="text-muted-foreground pl-6 text-xs">
+            Live runs use free-tier AI quota that can run out during judging. The
+            described lectures above are pre-rendered and always play, that's the
+            output this run would have produced.
+          </p>
+        </div>
       )}
     </div>
   );
