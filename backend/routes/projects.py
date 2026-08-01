@@ -259,8 +259,8 @@ def invalidate_cache() -> None:
 
 
 @router.get("/projects")
-async def list_projects(limit: int = 1, refresh: bool = False):
-    """Finished runs, newest last. Each carries playable URLs and its metrics."""
+async def list_projects(limit: int = 12, refresh: bool = False):
+    """Finished runs, newest first. Each carries playable URLs and its metrics."""
     now = time.monotonic()
     if not refresh and _cache["payload"] and now - _cache["at"] < CACHE_TTL:
         return _cache["payload"]

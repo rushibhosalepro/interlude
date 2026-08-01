@@ -235,6 +235,16 @@ async def job_events(job_id: str, request: Request):
             # very first message of every stream.
             yield {"event": "state", "data": json.dumps({"type": "state", "state": job})}
 
+            # the browser subscribes after submit returns, so it misses the
+            # broadcast that went out at queue time. send its position now.
+            if job.get("status") == "queued":
+                yield {
+                    "event": "queued",
+                    "data": json.dumps(
+                        {"type": "queued", "ahead": worker.jobs_ahead(job_id)}
+                    ),
+                }
+
             if job.get("status") in {"done", "failed"}:
                 yield {"event": "end", "data": json.dumps({"status": job["status"]})}
                 return

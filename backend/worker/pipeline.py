@@ -115,7 +115,7 @@ async def stage_analyse(job: dict, workdir: Path) -> None:
     """Fill or skip per gap, plus the essential visual facts.
 
     No keyframe extraction: the video goes to Gemini whole, so the model sees
-    motion instead of one still per gap, and nothing local decodes media.
+    motion instead of one still per gap.
     """
     gap_data = await asyncio.to_thread(
         storage.get_json, artifact_key(job, "analysis/{videoId}/gaps.json")
@@ -125,7 +125,20 @@ async def stage_analyse(job: dict, workdir: Path) -> None:
     )
 
     video = await source_video(job, workdir)
-    result = await analyse.analyse(str(video), gap_data["gaps"], transcript)
+
+    # Send a proxy, not the master. The request inlines the video as base64 and
+    # is capped around 18 MB, but Gemini samples at roughly one frame per second
+    # and the transcript rides along as text, so the master's frame rate,
+    # resolution and audio are all wasted against that ceiling. Silent 480p at
+    # 2fps of a near-static lecture compresses to single-digit MB.
+    proxy = await ffmpeg.make_proxy(str(video), str(workdir / "proxy.mp4"))
+    logger.info(
+        "proxy encoded: %.1f MB master -> %.1f MB proxy",
+        video.stat().st_size / 1_048_576,
+        Path(proxy).stat().st_size / 1_048_576,
+    )
+
+    result = await analyse.analyse(proxy, gap_data["gaps"], transcript)
 
     logger.info(
         "decided %d fill / %d skip (density %.0f%%), %s tokens",

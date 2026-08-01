@@ -114,8 +114,10 @@ async def analyse(video_path: str, gaps: list[dict], transcript: dict) -> dict:
     size = path.stat().st_size
     if size > MAX_INLINE_BYTES:
         raise AnalysisError(
-            f"{path.name} is {size / 1_048_576:.0f} MB, too big to inline. "
-            "Use the Gemini Files API for videos this size."
+            f"{path.name} is {size / 1_048_576:.0f} MB, too big to inline. The "
+            "pipeline sends a 480p 2fps silent proxy rather than the master, so "
+            "hitting this means either a very long recording or a proxy encode "
+            "that did not run."
         )
 
     prompt = PROMPT.format(

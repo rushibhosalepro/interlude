@@ -1,11 +1,11 @@
 """Transcription via Groq's hosted Whisper. Free tier, word level timestamps.
 
 Why hosted instead of local faster-whisper: Smart App Control on Windows blocks
-the unsigned ffmpeg DLLs that PyAV ships, and faster-whisper imports PyAV. Groq
-accepts the video file directly and does the decoding server side, so nothing
-local needs to touch a media codec.
+the unsigned ffmpeg DLLs that PyAV ships, and faster-whisper imports PyAV. It is
+also more accurate (large-v3-turbo vs a local base model) and faster.
 
-It is also more accurate (large-v3-turbo vs a local base model) and faster.
+Takes an audio file, not the video. The pipeline extracts mono 16kHz mp3 first,
+because Groq caps uploads at 25 MB and only needs the speech.
 """
 
 import asyncio
@@ -31,13 +31,13 @@ class TranscriptionError(RuntimeError):
     pass
 
 
-async def transcribe(video_path: str) -> dict:
-    """Word level transcript of a local video file."""
+async def transcribe(audio_path: str) -> dict:
+    """Word level transcript of a local audio file."""
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
         raise TranscriptionError("GROQ_API_KEY is not set")
 
-    path = Path(video_path)
+    path = Path(audio_path)
     size = path.stat().st_size
 
     if size > MAX_UPLOAD_BYTES:

@@ -44,6 +44,7 @@ export function JobTimeline({
   const [completed, setCompleted] = useState<string[]>([]);
   const [gaps, setGaps] = useState<Gap[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [ahead, setAhead] = useState(0);
   const sourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
@@ -60,6 +61,12 @@ export function JobTimeline({
       setStage(state.stage);
       setCompleted(state.completedStages ?? []);
       if (state.error) setError(state.error);
+    });
+
+    // one worker, one job at a time. without this a second upload just shows
+    // seven grey circles for as long as the job in front takes.
+    source.addEventListener("queued", (e) => {
+      setAhead(JSON.parse((e as MessageEvent).data).ahead ?? 0);
     });
 
     source.addEventListener("gap-start", (e) => {
@@ -112,8 +119,18 @@ export function JobTimeline({
     return "pending";
   };
 
+  const waiting = status === "queued" && ahead > 0;
+
   return (
     <div className="flex flex-col gap-4">
+      {waiting && (
+        <p className="text-muted-foreground flex items-center gap-2 text-sm">
+          <Loader2 className="size-4 shrink-0 animate-spin" />
+          Waiting for the worker.{" "}
+          {ahead === 1 ? "1 job ahead" : `${ahead} jobs ahead`} of this one.
+        </p>
+      )}
+
       <ol className="flex flex-col gap-1">
         {STAGES.map((s) => {
           const state = stageState(s.id);

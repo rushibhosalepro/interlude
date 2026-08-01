@@ -162,8 +162,11 @@ function Player({ project }: { project: Project }) {
         <video
           ref={videoRef}
           src={src}
-          // the hero should not buffer while a judge watches
-          preload="auto"
+          // metadata, not auto. auto pulls the whole file on every page load
+          // even if nobody presses play, and the B2 account is on a 1 GB/day
+          // download cap. Headers cost a few KB; the file is only fetched when
+          // someone actually watches. Worth the brief buffer on first play.
+          preload="metadata"
           playsInline
           onTimeUpdate={(e) => setT(e.currentTarget.currentTime)}
           onLoadedMetadata={(e) => setLoadedDuration(e.currentTarget.duration || 0)}

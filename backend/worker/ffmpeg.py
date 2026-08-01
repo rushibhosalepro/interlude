@@ -96,3 +96,30 @@ async def extract_audio(video: str, out_path: str) -> str:
         out_path,
     ])
     return out_path
+
+
+async def make_proxy(video: str, out_path: str) -> str:
+    """Silent, 720p, 2fps copy for the vision model.
+
+    Gemini samples video at roughly one frame per second, and the transcript
+    goes in the same request as text, so the master's frame rate and audio
+    track are wasted bytes against the inline request cap. A lecture is close to
+    static between board strokes, so this compresses hard: a 191 MB master lands
+    in single-digit MB.
+
+    720p, not 480p: handwritten equations on a blackboard go illegible when
+    downscaled further, and if the model cannot read what is being written it
+    judges the gap as nothing essential and skips it. crf 28 keeps chalk edges
+    crisp. Still small: a few minutes of near-static lecture stays well under
+    the 18 MB inline cap.
+    """
+    await run([
+        "-v", "error", "-y",
+        "-i", video,
+        "-an",
+        "-vf", "scale=-2:720,fps=2",
+        "-c:v", "libx264", "-crf", "28", "-preset", "veryfast",
+        "-pix_fmt", "yuv420p",
+        out_path,
+    ])
+    return out_path
