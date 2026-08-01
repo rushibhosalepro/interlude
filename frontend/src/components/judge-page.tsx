@@ -440,6 +440,13 @@ export function JudgePage({
   const m = project.metrics;
   const skipped = m.gapsFound - m.toFill;
 
+  // Show coverage as honest counts ("2 of 3 facts"), not a percentage. The
+  // sample is 1-3 facts per short clip, so "100%" reads as inflated; the raw
+  // count makes the small sample visible, which is the honest thing.
+  const covTotal = project.coverage.facts.length;
+  const covAfter = project.coverage.facts.filter((f) => f.recovered).length;
+  const covBefore = Math.round(project.coverage.before * covTotal);
+
   // the gap with the most attempts is the one worth showing the loop for
   const showcase = useMemo(
     () =>
@@ -543,9 +550,9 @@ export function JudgePage({
               color={m.overruns === 0 ? INK : RED}
             />
             <StatCard
-              value={`${Math.round(project.coverage.after * 100)}%`}
-              before={`${Math.round(project.coverage.before * 100)}%`}
-              label="of on-screen content recoverable from audio alone"
+              value={`${covAfter} of ${covTotal}`}
+              before={`${covBefore} of ${covTotal}`}
+              label="visual facts a listener can recover from audio alone, before and after"
               color={GREEN}
             />
           </div>
