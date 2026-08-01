@@ -309,16 +309,26 @@ export function App() {
   const [jobId, setJobId] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
 
-  // default to the newest finished run; the switcher lets a judge pick another
+  // default to the shortest clip so a judge's first play loads fast; the rail
+  // lets them switch to the longer ones. falls back to the first if durations
+  // are missing.
   useEffect(() => {
-    const first = projects?.[0];
-    if (first && !projects.some((p) => p.videoId === selectedId)) {
-      setSelectedId(first.videoId);
-    }
+    if (!projects?.length) return;
+    if (projects.some((p) => p.videoId === selectedId)) return;
+    const shortest = [...projects].sort(
+      (a, b) => (a.durationSeconds ?? 1e9) - (b.durationSeconds ?? 1e9),
+    )[0];
+    if (shortest) setSelectedId(shortest.videoId);
   }, [projects, selectedId]);
 
+  const shortestFirst = projects
+    ? [...projects].sort(
+        (a, b) => (a.durationSeconds ?? 1e9) - (b.durationSeconds ?? 1e9),
+      )
+    : null;
+
   const featured =
-    projects?.find((p) => p.videoId === selectedId) ?? projects?.[0];
+    projects?.find((p) => p.videoId === selectedId) ?? shortestFirst?.[0];
 
   const runPanel = (
     <div
@@ -408,9 +418,9 @@ export function App() {
                 gap: 18,
               }}
             >
-              {projects && projects.length > 1 && (
+              {shortestFirst && shortestFirst.length > 1 && (
                 <ClipRail
-                  projects={projects}
+                  projects={shortestFirst}
                   selectedId={selectedId}
                   onSelect={setSelectedId}
                 />

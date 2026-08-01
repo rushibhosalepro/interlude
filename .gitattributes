@@ -1,0 +1,10 @@
+# never apply line-ending or text conversion to binary media
+*.mp4 binary
+*.mov binary
+*.m4a binary
+*.mp3 binary
+*.wav binary
+*.png binary
+*.jpg binary
+*.webp binary
+*.svg -text
