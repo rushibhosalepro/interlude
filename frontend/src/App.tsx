@@ -15,18 +15,29 @@ function clip(t: number | null) {
 
 /** A placeholder that fills the demo column while projects load, so the page
  *  keeps its shape instead of collapsing to a small box in empty space. */
-function DemoSkeleton({ message }: { message: string }) {
-  const block = (h: number | string, w: string = "100%", mt = 0) => (
+function DemoSkeleton({
+  state,
+  message,
+  onRetry,
+}: {
+  state: "loading" | "error" | "empty";
+  message: string;
+  onRetry?: () => void;
+}) {
+  const block = (h: number | string, mt = 0) => (
     <div
       style={{
         height: h,
-        width: w,
+        width: "100%",
         marginTop: mt,
         borderRadius: 8,
         background: "#0e0e11",
+        animation:
+          state === "loading" ? "shimmer 1.4s ease-in-out infinite" : "none",
       }}
     />
   );
+
   return (
     <div
       style={{
@@ -73,7 +84,6 @@ function DemoSkeleton({ message }: { message: string }) {
           }}
         >
           <div>
-            {/* video placeholder */}
             <div
               style={{
                 width: "100%",
@@ -82,16 +92,59 @@ function DemoSkeleton({ message }: { message: string }) {
                 background: "#0e0e11",
                 border: "1px solid #1c1c1f",
                 display: "flex",
+                flexDirection: "column",
                 alignItems: "center",
                 justifyContent: "center",
-                color: "#5f5c58",
-                fontFamily: "'IBM Plex Mono',monospace",
-                fontSize: 12,
+                gap: 14,
+                animation:
+                  state === "loading"
+                    ? "shimmer 1.4s ease-in-out infinite"
+                    : "none",
               }}
             >
-              {message}
+              {state === "loading" && (
+                <div
+                  style={{
+                    width: 26,
+                    height: 26,
+                    borderRadius: "50%",
+                    border: "2px solid #2a2a2f",
+                    borderTopColor: "#e8a94f",
+                    animation: "spin 0.8s linear infinite",
+                  }}
+                />
+              )}
+              <div
+                style={{
+                  fontFamily: "'IBM Plex Mono',monospace",
+                  fontSize: 12,
+                  color: state === "error" ? "#c76b5a" : "#75726d",
+                  textAlign: "center",
+                  maxWidth: "80%",
+                  lineHeight: 1.5,
+                }}
+              >
+                {message}
+              </div>
+              {state === "error" && onRetry && (
+                <button
+                  onClick={onRetry}
+                  style={{
+                    padding: "8px 16px",
+                    borderRadius: 8,
+                    border: "1px solid #26262a",
+                    background: "transparent",
+                    color: "#c9c5be",
+                    fontSize: 12.5,
+                    cursor: "pointer",
+                    fontFamily: "'Space Grotesk',Helvetica,sans-serif",
+                  }}
+                >
+                  Try again
+                </button>
+              )}
             </div>
-            {block(34, "100%", 14)}
+            {block(34, 14)}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
             {block(78)}
@@ -390,13 +443,15 @@ export function App() {
             </aside>
             <div style={{ flex: "1 1 620px", minWidth: 0 }}>
               <DemoSkeleton
+                state={error ? "error" : projects === null ? "loading" : "empty"}
                 message={
                   error
-                    ? `Could not load the demos: ${error}`
+                    ? "Could not reach the server. It may be starting up, or the storage cap is refreshing."
                     : projects === null
-                      ? "Loading the described lectures…"
-                      : "No finished runs yet. Run one on the left."
+                      ? "Loading the described lectures"
+                      : "No finished runs yet. Start one on the left."
                 }
+                onRetry={refresh}
               />
             </div>
           </div>

@@ -12,6 +12,16 @@ if (!process.env.BUN_PUBLIC_API_URL) {
 
 const server = serve({
   routes: {
+    // Cached demo assets. On Vercel these are served straight from public/ by
+    // the CDN; the dev server has no static handler for public/, so serve them
+    // here too, otherwise the "/*" catch-all returns index.html for them.
+    "/demos/:file": (req) => {
+      // basename only, so the param cannot climb out of the folder
+      const name = (req.params.file || "").split(/[\\/]/).pop() || "";
+      const file = Bun.file(`./public/demos/${name}`);
+      return new Response(file);
+    },
+
     // Serve index.html for all unmatched routes.
     "/*": index,
 

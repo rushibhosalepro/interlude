@@ -815,10 +815,46 @@ export function useProjects() {
 
   useEffect(() => {
     let cancelled = false;
-    axios
-      .get(`${API_URL}/api/projects`, { params: key ? { refresh: true } : {} })
-      .then(({ data }) => !cancelled && setProjects(data.projects))
-      .catch((err) => !cancelled && setError(err.message));
+
+    async function load() {
+      try {
+        const { data } = await axios.get(`${API_URL}/api/projects`, {
+          params: key ? { refresh: true } : {},
+        });
+
+        // Curated demos are shipped as static files in public/demos, so their
+        // playback is served from the frontend CDN instead of pulling from B2
+        // on every view. scripts/cache_demos.py writes the manifest and files.
+        // Judge-created runs are not listed and keep streaming from B2.
+        let staticIds: string[] = [];
+        try {
+          const m = await axios.get("/demos/manifest.json");
+          staticIds = m.data?.ids ?? [];
+        } catch {
+          // no bundled demos, everything streams from B2 as before
+        }
+
+        // Only the described video (the default, most-watched) is bundled
+        // statically. originalUrl keeps streaming from B2, since the Original
+        // toggle is a brief click and the source files are large.
+        const projects: Project[] = (data.projects as Project[]).map((p) =>
+          staticIds.includes(p.videoId)
+            ? {
+                ...p,
+                videoUrl: `/demos/${p.videoId}.mp4`,
+                downloadUrl: `/demos/${p.videoId}.mp4`,
+              }
+            : p,
+        );
+
+        if (!cancelled) setProjects(projects);
+      } catch (err) {
+        if (!cancelled)
+          setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    load();
     return () => {
       cancelled = true;
     };
