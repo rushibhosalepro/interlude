@@ -23,6 +23,9 @@ function Player({ project }: { project: Project }) {
   const [playing, setPlaying] = useState(false);
   const [described, setDescribed] = useState(true);
   const [loadedDuration, setLoadedDuration] = useState(0);
+  // true while the file is fetching/buffering, so a click gives instant feedback
+  // instead of a black box (preload=metadata means first play always buffers)
+  const [buffering, setBuffering] = useState(false);
 
   // Two real files, not one file muted. The described cut is the deliverable;
   // the original is the untouched upload, so the A/B is an actual comparison.
@@ -73,8 +76,13 @@ function Player({ project }: { project: Project }) {
   const toggle = () => {
     const video = videoRef.current;
     if (!video) return;
-    if (playing) video.pause();
-    else video.play().catch(() => {});
+    if (playing) {
+      video.pause();
+    } else {
+      // instant feedback: the file usually has to fetch before the first frame
+      if (video.readyState < 3) setBuffering(true);
+      video.play().catch(() => {});
+    }
   };
 
   const seek = (e: React.MouseEvent<HTMLDivElement>) => {
@@ -172,8 +180,49 @@ function Player({ project }: { project: Project }) {
           onLoadedMetadata={(e) => setLoadedDuration(e.currentTarget.duration || 0)}
           onPlay={() => setPlaying(true)}
           onPause={() => setPlaying(false)}
+          onWaiting={() => setBuffering(true)}
+          onStalled={() => setBuffering(true)}
+          onPlaying={() => setBuffering(false)}
+          onCanPlay={() => setBuffering(false)}
           style={{ width: "100%", height: "100%", objectFit: "cover", display: "block" }}
         />
+
+        {buffering && (
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 12,
+              background: "rgba(8,8,10,0.55)",
+              pointerEvents: "none",
+            }}
+          >
+            <div
+              style={{
+                width: 30,
+                height: 30,
+                borderRadius: "50%",
+                border: "3px solid rgba(255,255,255,0.18)",
+                borderTopColor: AMBER,
+                animation: "spin 0.8s linear infinite",
+              }}
+            />
+            <div
+              style={{
+                fontFamily: "'IBM Plex Mono',monospace",
+                fontSize: 11,
+                letterSpacing: "0.08em",
+                color: "#c9c5be",
+              }}
+            >
+              LOADING THE LECTURE
+            </div>
+          </div>
+        )}
 
         {current && (
           <div
