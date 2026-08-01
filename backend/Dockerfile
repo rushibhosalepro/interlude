@@ -22,8 +22,7 @@ ENV UV_COMPILE_BYTECODE=1 \
 # Dependencies first, in their own layer. Application code changes on every
 # commit; the lockfile does not, so this layer stays cached across deploys.
 COPY pyproject.toml uv.lock ./
-RUN --mount=type=cache,target=/root/.cache/uv \
-    uv sync --locked --no-dev --no-install-project
+RUN uv sync --locked --no-dev --no-install-project
 
 COPY . .
 
