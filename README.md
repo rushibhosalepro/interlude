@@ -12,7 +12,7 @@ described audio track.
 Built for the **Backblaze Generative Media Hackathon** (Genblaze on B2).
 
 - **Live app:** https://interlude-beta.vercel.app
-- **Demo video:** _(add link)_
+- **Demo video:** see the Devpost submission
 
 ---
 
@@ -66,8 +66,8 @@ bun install
 bun dev
 ```
 
-Open http://localhost:3000. Two sample lectures run with one click, no upload
-needed.
+Open http://localhost:3000. Three described lectures are there to watch; two of
+them run the full pipeline with one click, no upload needed.
 
 ## Backblaze B2 setup
 
