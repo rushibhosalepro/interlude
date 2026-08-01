@@ -17,12 +17,21 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-application_key_id = os.getenv("BACKBLAZE_APPLICATION_KEY_ID")
-application_key = os.getenv("BACKBLAZE_APPLICATION_KEY")
-endpoint_url = os.getenv("BACKBLAZE_ENDPOINT_URL")
-region = os.getenv("BACKBLAZE_REGION")
-media_bucket = os.getenv("BACKBLAZE_MEDIA_BUCKET")
-compliance_bucket = os.getenv("BACKBLAZE_COMPLIANCE_BUCKET")
+
+def _env(name: str) -> str | None:
+    # strip whitespace: values pasted into a hosting dashboard, or read from a
+    # docker --env-file, often carry a trailing space or newline, and boto3
+    # rejects a bucket name with one ("interlude-media " is invalid).
+    value = os.getenv(name)
+    return value.strip() if value else value
+
+
+application_key_id = _env("BACKBLAZE_APPLICATION_KEY_ID")
+application_key = _env("BACKBLAZE_APPLICATION_KEY")
+endpoint_url = _env("BACKBLAZE_ENDPOINT_URL")
+region = _env("BACKBLAZE_REGION")
+media_bucket = _env("BACKBLAZE_MEDIA_BUCKET")
+compliance_bucket = _env("BACKBLAZE_COMPLIANCE_BUCKET")
 
 # fail at import rather than handing out broken presigned URLs at request time
 _required = {
