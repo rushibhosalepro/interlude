@@ -19,9 +19,9 @@ Built for the **Backblaze Generative Media Hackathon** (Genblaze on B2).
 ## What it does
 
 1. Transcribe the lecture and find the silences between words.
-2. For each silence, a vision model decides *fill or leave silent* — most stay
+2. For each silence, a vision model decides *fill or leave silent*. Most stay
    silent, because over-narration is the classic failure of audio description.
-3. Write a description, synthesise it, and **measure the audio** — if it runs
+3. Write a description, synthesise it, and **measure the audio**. If it runs
    past the gap it rewrites shorter until it fits.
 4. A **second, different** model listens to the described audio with no video
    and reports which visual facts it can recover. That is the honest test of a
@@ -73,9 +73,9 @@ them run the full pipeline with one click, no upload needed.
 
 Two buckets:
 
-- `interlude-media` — source uploads, analysis artifacts, every description
+- `interlude-media`: source uploads, analysis artifacts, every description
   attempt, and the final described video. Lifecycle-expire the attempts.
-- `interlude-compliance` — one immutable provenance record per run, **Object
+- `interlude-compliance`: one immutable provenance record per run, **Object
   Lock enabled**.
 
 Apply the browser-upload CORS rules with `backend/scripts/set_b2_cors.py`
