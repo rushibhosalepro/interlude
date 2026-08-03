@@ -12,14 +12,14 @@ described audio track.
 Built for the **Backblaze Generative Media Hackathon** (Genblaze on B2).
 
 - **Live app:** https://interlude-beta.vercel.app
-- **Demo video:** see the Devpost submission
+- **Demo video:** https://youtu.be/A2ZaPXM1SwY
 
 ---
 
 ## What it does
 
 1. Transcribe the lecture and find the silences between words.
-2. For each silence, a vision model decides *fill or leave silent*. Most stay
+2. For each silence, a vision model decides _fill or leave silent_. Most stay
    silent, because over-narration is the classic failure of audio description.
 3. Write a description, synthesise it, and **measure the audio**. If it runs
    past the gap it rewrites shorter until it fits.
@@ -31,14 +31,14 @@ Built for the **Backblaze Generative Media Hackathon** (Genblaze on B2).
 
 ## Stack
 
-| Layer | Choice |
-|---|---|
-| Frontend | React + Bun, deployed on Vercel |
-| Backend | FastAPI, Python 3.13, uv, deployed on Railway (Docker) |
-| Storage | Backblaze B2 (S3-compatible), Object Lock on the provenance bucket |
-| Orchestration | Genblaze SDK (TTS pipeline + provenance manifest) |
-| Models | Groq Whisper (STT), Google Gemini (vision + writing), Groq Llama (coverage checker), ElevenLabs (TTS) |
-| Media | ffmpeg / ffprobe |
+| Layer         | Choice                                                                                                |
+| ------------- | ----------------------------------------------------------------------------------------------------- |
+| Frontend      | React + Bun, deployed on Vercel                                                                       |
+| Backend       | FastAPI, Python 3.13, uv, deployed on Railway (Docker)                                                |
+| Storage       | Backblaze B2 (S3-compatible), Object Lock on the provenance bucket                                    |
+| Orchestration | Genblaze SDK (TTS pipeline + provenance manifest)                                                     |
+| Models        | Groq Whisper (STT), Google Gemini (vision + writing), Groq Llama (coverage checker), ElevenLabs (TTS) |
+| Media         | ffmpeg / ffprobe                                                                                      |
 
 Architecture, the two loops, and the B2/Genblaze design are documented in the
 Devpost write-up.
